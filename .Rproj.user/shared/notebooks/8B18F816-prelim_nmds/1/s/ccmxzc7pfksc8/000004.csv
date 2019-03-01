@@ -1,0 +1,4 @@
+"0","plot(one~Species,data=spes3)
+plot(two~Species,data=spes3)
+"
+"0","plot(three~Species,data=spes3)"

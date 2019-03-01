@@ -1,0 +1,7 @@
+"0","# Which OTUs have a tiny count??
+length(which(otutots<10))
+"
+"1","[1]"
+"1"," 97"
+"1","
+"

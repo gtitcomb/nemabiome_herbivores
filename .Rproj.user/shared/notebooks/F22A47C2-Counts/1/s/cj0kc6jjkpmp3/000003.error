@@ -1,0 +1,1 @@
+{"frames":[{"character_number":0,"end_character_number":0,"end_line_number":0,"file":"","func":"setwd(\"C:/Users/Georgia/Dropbox/Projects/Watering Holes/Data_all/Vegetation/FINAL_ANALYSES\")","line_number":0}],"message":"Error in setwd(\"C:/Users/Georgia/Dropbox/Projects/Watering Holes/Data_all/Vegetation/FINAL_ANALYSES\") : \n  cannot change working directory\n"}

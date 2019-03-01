@@ -1,0 +1,223 @@
+---
+title: "Data Exploration"
+author: "Georgia Titcomb"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggridges)
+library(vegan)
+library(gridExtra)
+```
+
+
+## Look at the data
+
+Here, I have taken the OTU spreadsheet and added the metadata for each sample. The rows are the samples, the columns are the OTUs.
+
+```{r}
+
+otu <- read.csv("with_names.csv")
+levels(otu$Location)
+dim(otu)
+head(otu)
+```
+
+## Investigate specific OTUs
+
+OTU 1 is the most abundant
+
+```{r}
+
+ggplot(otu, aes(x=one, y=Species))+
+  geom_density_ridges2(aes(col=Species, fill=Species))+
+  ggtitle("Distribution of OTU 1 by Species and Location")+
+  facet_wrap(~Location)
+
+ggplot(otu, aes(x=Species, y=one))+
+  geom_boxplot(aes(col=Location))
+
+
+```
+
+Some observations: Most of the read counts are fairly low, with some that are extremely high, especially for buffalo and impala. Furthermore, I notice a difference among locations: HIP seems to have pretty low counts overall. 
+
+```{r}
+
+ggplot(otu, aes(x=X1, y=Species))+
+  geom_density_ridges2(aes(col=Location, fill=Location))+
+  ggtitle("Distribution of OTU 1 by Species and Location")+
+  facet_wrap(~Plate)
+
+```
+When I separate by plate, I can see that reads seem to be lower on plate 5 than any other plate, across species.
+
+## Normalizing the data
+
+We have a similar problem as before, whereby we need to determine a threshold to determine whether or not a species is present. However, imposing an arbitrary threshold across samples is unlikely to be the best option, as we can see that some plates amplified better than others, and it would make sense that different OTUs and different samples might have different results.
+
+We can rarefy reads within each sample
+
+```{r}
+# Sum up the total number of reads per sample:
+otu$TOTAL <- apply(otu[,15:343], 1, sum)
+
+ggplot(otu, aes(x=TOTAL, y=Species))+
+  geom_density_ridges2()
+
+otu$S1 <- specnumber(otu[15:343])
+
+otu %>%
+  gather(key=OTU_ID, value=Reads, X1:X329) %>%
+  ggplot(aes(x=Species, y=Reads, fill=OTU_ID))+
+  geom_bar(stat="identity")+
+  guides(fill=FALSE, color=FALSE)+
+  scale_fill_hue(h=c(180,360))
+
+# Hard to see, so just first chunk of OTUs
+
+p1 <- otu %>%
+  gather(key=OTU_ID, value=Reads, X1:X30) %>%
+  ggplot(aes(x=Species, y=Reads, fill=OTU_ID))+
+  geom_bar(stat="identity")+
+  #guides(fill=FALSE, color=FALSE)+
+  scale_fill_hue(h=c(0,360))
+p2 <- otu %>%
+  gather(key=OTU_ID, value=Reads, X1:X30) %>%
+  ggplot(aes(x=Species, y=Reads, fill=OTU_ID))+
+  geom_bar(position="fill",stat="identity")+
+  #guides(fill=FALSE, color=FALSE)+
+  scale_fill_hue(h=c(0,360))
+
+grid.arrange(p1,p2)
+```
+
+## How many of these OTUs have counts that are useful?
+
+```{r}
+
+colSums()
+otutots <- (apply(otu[,15:343],2,sum))
+# Highly aggregated column
+
+# Which OTUs have a tiny count??
+length(which(otutots<10))
+
+```
+
+There are 97 OTUs that have less than 10 total reads across all samples
+
+
+```{r}
+
+# We have inconsistent total number of reads by sample, so need to standardize
+otu_std <- otu %>%
+  mutate_at(vars(X1:X329), funs(./TOTAL))
+
+p3 <- otu_std %>%
+  gather(key=OTU_ID, value=Reads, X1:X30) %>%
+  ggplot(aes(x=Species, y=Reads, fill=OTU_ID))+
+  geom_bar(position="fill",stat="identity")+
+  #guides(fill=FALSE, color=FALSE)+
+  scale_fill_hue(h=c(0,360))
+
+grid.arrange(p2,p3)
+
+levelplot(as.matrix(otu_std[,15:343]), xlab="Sample", ylab="OTU", pretty=T, col.regions=colorRampPalette(c("darkblue","white","pink")), scales = list(tck = c(1,0)))
+
+# Now look at only a few samples
+levelplot(as.matrix(otu_std[1:10,15:35]), xlab="Sample", ylab="OTU", pretty=T, col.regions=colorRampPalette(c("darkblue","white","pink")), scales = list(tck = c(1,0)))
+
+hist(as.numeric(otu_std[5,15:343]))
+
+# Arbitrary threshold needs to be imposed
+```
+
+I'm going to use a threshold whereby I discard OTUs that account for less than 5% of reads
+
+```{r}
+
+otu_sparse <- otu_std %>%
+  mutate_at(vars(X1:X329), funs(ifelse(.<0.05,0,.)))
+
+# Now look at only a few samples
+levelplot(as.matrix(otu_sparse[1:10,15:35]), xlab="Sample", ylab="OTU", pretty=T, col.regions=colorRampPalette(c("darkblue","white","pink")), scales = list(tck = c(1,0)))
+
+otu_sparse$S2 <- specnumber(otu_sparse[,15:343])
+
+# How many OTUs have <5%?
+length(which(colSums(otu_sparse[,15:343])==0))
+zeros <- names(otu_sparse)[(which(colSums(otu_sparse[,15:343])==0)+14)]
+# Condense dataset
+otu_sparse2 <- otu_sparse[,-which(names(otu_sparse)%in%zeros)]
+dim(otu_sparse2)
+
+levelplot(as.matrix(otu_sparse2[,15:73]), xlab="Sample", ylab="OTU", pretty=T, col.regions=colorRampPalette(c("darkblue","white","pink")), scales = list(tck = c(1,0)))
+
+head(otu_sparse2)
+dim(otu_sparse2)
+
+rankindex(otu_sparse2[,c(11,12,13)], otu_sparse2[,15:73], c("euc","man","bray","jac","kul"))
+otu_dist <- vegdist(otu_sparse2[,15:73], method="euclidean", binary=F)
+
+t1 <- metaMDS(otu_sparse2[,15:73], k=3, trymax=50, autotransform=F, distance="euclidean", noshare=0.3)
+t2 <- metaMDS(otu_sparse2[,15:73], k=3, trymax=50, autotransform=F,previous.best=t1, distance="euclidean", noshare=0.3)
+t3 <- metaMDS(otu_sparse2[,15:73], k=3, trymax=50, autotransform=F,previous.best=t2, distance="euclidean", noshare=0.3)
+t4 <- metaMDS(otu_sparse2[,15:73], k=3, trymax=50, autotransform=F,previous.best=t3, distance="euclidean", noshare=0.1)
+t5 <- metaMDS(otu_sparse2[,15:73], k=3, trymax=50, autotransform=F,previous.best=t4, distance="euclidean")
+
+
+stressplot(t3)
+
+plot(t3, display=c("sites", "species"), type="t")
+# OTUs are shown in red, samples in black
+
+otufit <- envfit(t3, otu_sparse[,c(11:12)])
+ordiplot(t3)
+with(otu_sparse2, ordiellipse(t3,groups=Species, col=c("black", "orange", "purple", "orangered", "yellow", "green", "lightblue")))
+plot(otufit)
+
+ordirgl(t3)
+with(otu_sparse2[,1:14], orglellipse(t3, as.factor(Species), col=c("black", "orange", "purple", "orangered", "yellow", "green", "lightblue")))
+```
+
+
+```{r}
+# Clustering the OTUs and investigating parasite species
+
+hc <- hclust(dist(otu_sparse2[,15:73]))
+plot(hc)
+cent <- NULL
+membs <- cutree(hc, k=10)
+for(k in 1:10){
+  cent <- rbind(cent, colMeans(otu_sparse2[membs==k,15:73,drop=F]))
+}
+hcl <- hclust(dist(cent)^2, method="cen", members=table(membs))
+opar <- par(mfrow=c(1,2))
+plot(hc)
+plot(hcl)
+
+
+kmeans(dist(otu_sparse2[,15:73]), 5)
+
+
+
+```
+
+
+```{r}
+
+# Investigate 'species richness' for samples
+
+# 1. rarefy a)sparse otus and b) clusters by total read count
+
+
+head(otu_sparse2)
+
+assoc <- aggregate(.~Species,data=otu_sparse2[,c(11,15:73)], FUN=mean)
+head(assoc)
+
+
+```

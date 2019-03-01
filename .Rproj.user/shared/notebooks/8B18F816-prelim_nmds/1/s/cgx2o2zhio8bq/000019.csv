@@ -1,0 +1,4 @@
+"0","# need to convert to numical values
+spes2 <- apply(spes[16:345],2,as.numeric)
+"
+"2","NAs introduced by coercion"

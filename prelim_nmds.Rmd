@@ -1,0 +1,749 @@
+---
+title: "PrelimAnalysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+
+```{r}
+
+nems <- read.table("OTU_log3.5.tab", header=T)
+dim(nems)
+head(nems)
+
+View(nems)
+
+levels(nems[is.na(nems$species_name_ok)==F,4])
+nems[nems$species_name_ok=="Caenorhabditis elegans",]
+which(nems$species_name_ok=="Caenorhabditis elegans")
+nems[158,]
+
+#write.csv(nems, "nems1.csv")
+
+nems3 <- read.table("OTU_log3.tab", header=T)
+dim(nems3)
+# Ok, X samples...
+
+names(nems)
+
+# Remove "Sample" from name
+new <- sub("sample.","",names(nems3))
+names(nems3) <- new
+# Only take relevant data
+nem2 <- nems3[,c(15,31:694)]
+# Transpose
+tpose <- t(nem2)
+names(tpose) <- tpose[1,]
+tpose <- tpose[-1,]
+
+new2 <- strsplit(row.names(tpose), c("_"))
+b <- unlist(new2)
+meta2 <- matrix(b, ncol=3,byrow=T)
+
+#write.csv(meta2, "meta_log3.csv")
+
+meta <- read.csv("meta_log3.csv")
+tpose2 <- cbind(meta,tpose)
+d <- read.csv("with_names.csv")
+
+row.names(tpose)
+invert2 <- cbind(tpose2, row.names(tpose2))
+names(invert2)[334] <- "Sample"
+Sample <- sub("sample.","",as.character(invert2[,334]))
+invert3 <- cbind(invert2,Sample)
+head(invert3)
+
+nameys <- c("Location", "Year", "Species", "Number",seq(1:329),"S","Sample")
+colnames(invert3) <- nameys
+invert3 <- as.data.frame(invert3)
+####################### all the above is just sorting data
+
+sd <- read.csv("Sequenced_Samples_nem2018.csv")
+head(sd)
+
+easy <- sd[sd$Sample %in% invert3$Sample==T,]
+sd[sd$Sample %in% invert3$Sample==F,5]
+
+head(easy)
+head(invert3)
+names(invert3)
+names(easy)
+# This takes a little while
+spes <- left_join(easy,invert3, by="Sample")
+names(spes)[16:25] <- c("one","two","three","four","five","six","seven","eight","nine", "ten")
+
+head(spes)
+str(spes)
+# need to convert to numical values
+spes2 <- apply(spes[16:345],2,as.numeric)
+spes3 <- cbind(spes[,1:15],spes2)
+```
+# Now I want to assign locations
+
+
+```{r}
+plot(one~Species,data=spes3)
+plot(two~Species,data=spes3)
+plot(three~Species,data=spes3)
+plot(four~Species, data=spes3)
+
+```
+
+
+```{r}
+spes3$Sample
+head(spes3)
+LOCS <- as.data.frame(str_split_fixed(spes3$Sample, "_", n=3))
+spes4 <- cbind(spes3,LOCS)
+names(spes4)
+
+for(i in 12:22){
+  p <- ggplot(spes4,aes(x=Species,y=spes4[,i]))+
+    geom_boxplot(aes(col=V1))
+  print(p)
+}
+
+for(i in 23:33){
+  p <- ggplot(spes4,aes(x=Species,y=spes4[,i]))+
+    geom_boxplot(aes(col=V1))
+  print(p)
+}
+
+for(i in 34:100){
+  p <- ggplot(spes4,aes(x=Species,y=spes4[,i]))+
+    geom_boxplot(aes(col=V1))
+  print(p)
+}
+
+head(spes4)
+
+```
+
+
+```{r}
+hist(rowSums(spes4[,12:340]))
+maxes <- (apply(spes4[,12:340],1,max))
+hist(maxes)
+which(maxes<1000)
+
+library(vegan)
+comm_mat <- d[,6:334]
+mm <- metaMDS(comm_mat)
+stressplot(mm)
+
+#Rarefy
+min_depth <- min(colSums(comm_mat))
+comm_rare <- as.data.frame(round(rrarefy(comm_mat, min_depth)))
+
+log_comm_rare = log(comm_rare+1)
+rank.totus <- rankindex(as.matrix(log_comm_rare), log_comm_rare, indices = c("bray", "euclid", "manhattan", "horn"), method = "spearman")
+print(paste("The highest rank was given by the", names(sort(rank.totus, decreasing = TRUE)[1]), "method."))
+
+
+otus_dist = as.matrix((vegdist(log_comm_rare, "manhattan")))
+#perform NMDS
+ NMDS = metaMDS(otus_dist)
+stressplot(NMDS)
+ 
+#build a data frame with NMDS coordinates and metadata
+ MDS1 = NMDS$points[,1]
+ MDS2 = NMDS$points[,2]
+ NMDS = data.frame(MDS1 = MDS1, MDS2 = MDS2, Species = d$Species, Location = d$Location, Year=d$Year) 
+ 
+head(NMDS)
+eNMDS <- NMDS[NMDS$Species%in%c("Elephant","Buffalo","Impala","Warthog","Grevys Zebra","Plains Zebra"),]
+
+
+ggplot(eNMDS, aes(x=MDS1, y=MDS2, col=Species)) +
+ geom_point() +
+ stat_ellipse() +
+ theme_bw() +
+ labs(title = "NMDS Plot")
+
+
+
+head(comm_rare)
+
+#### Just do MPALA
+summary(d$Species)
+mpala_d <- d[d$Location=="MRC",]
+summary(mpala_d$Species)
+
+#mpala_d <- mpala_d[mpala_d$Species%in%c("Buffalo","Cow","Dik-dik","Eland","Elephant","Giraffe","Grants Gazelle","Grevy's Zebra","Hartebeest","Impala","Plains zebra"),]
+
+mpala_13 <- mpala_d[mpala_d$Species%in%c("Buffalo", "Cow", "Eland", "Elephant", "Giraffe", "Grants Gazelle", "Grevy's Zebra", "Grevys zebra", "Hartebeest", "Impala", "Plains zebra", "Warthog", "Waterbuck", "Oryx")]
+
+head(mpala_13)
+mpala_13$TOTAL <- apply(mpala_13[,6:273], 1, sum)
+mp_std <- mpala_13 %>%
+  mutate_at(vars(V1:V325), funs(./TOTAL))
+mp_sparse <- mp_std %>%
+  mutate_at(vars(V1:V325), funs(ifelse(.<0.05,0,.)))
+mp_sparse$S2 <- specnumber(mp_sparse[,6:273])
+
+# How many OTUs have <5%?
+length(which(colSums(mp_sparse[,6:273])==0))
+mpzeros <- names(mp_sparse)[(which(colSums(mp_sparse[,6:271])==0)+5)]
+# Condense dataset
+mp_sparse2 <- mp_sparse[,-which(names(mp_sparse)%in%mpzeros)]
+dim(mp_sparse2)
+
+levels(mp_sparse2$Species)[11] <- "Grevys zebra"
+
+mpassoc <- aggregate(.~Species,data=mp_sparse2[,c(5:46)], FUN=mean)
+mpassoc <- mpassoc[which(mpassoc$Species %in% c("Buffalo", "Cow", "Eland", "Elephant", "Giraffe", "Grants Gazelle", "Grevy's Zebra", "Grevys zebra", "Hartebeest", "Impala", "Plains zebra", "Warthog", "Waterbuck", "Oryx")),]
+mp_mat <- as.data.frame(mpassoc)
+mp_matb <- mp_mat[,-2]
+
+mp_mat2 <- gather(mp_matb, key=OTU, value=Reads, -Species)
+#levels(mp_mat2$Species)[11] <- "Grevys zebra"
+
+#library(reshape2)
+dat2 <- melt(mp_mat2)
+w <- dcast(dat2, Species~OTU)
+x <- as.matrix(w[,-1])
+x[is.na(x)] <- 0
+x <- apply(x, 2,  function(x) as.numeric(x > 0))  #recode as 0/1
+v <- x %*% t(x)                                   #the magic matrix 
+diag(v) <- 0                                      #repalce diagonal
+dimnames(v) <- list(w[, 1], w[,1])                #name the dimensions
+v
+
+g <- graph.adjacency(v, weighted=TRUE, mode ='undirected')
+g <- simplify(g)
+# set labels and degrees of vertices
+V(g)$label <- V(g)$name
+V(g)$degree <- degree(g)
+E(g)$width <- E(g)$weight/2
+plot(g)
+
+mpassoc
+mp_bin <- mutate_at(mpassoc, vars(V1:V325), funs(ifelse(.>0,1,0)))
+mp_bin
+hist(colSums(mp_bin[,-1]))
+length(which(colSums(mp_bin[,-1])%in%c(1,2)))
+length(which(colSums(mp_bin[,-1])>5))
+21/36
+```
+
+######
+
+```{r}
+comm_mat <- mpala_d[,6:334]
+#Rarefy
+min_depth <- min(rowSums(comm_mat))
+comm_rare <- as.data.frame(round(rrarefy(comm_mat, min_depth)))
+
+log_comm_rare = log(comm_rare+1)
+rank.totus <- rankindex(as.matrix(log_comm_rare), log_comm_rare, indices = c("bray", "euclid", "manhattan", "horn"), method = "spearman")
+print(paste("The highest rank was given by the", names(sort(rank.totus, decreasing = TRUE)[1]), "method."))
+
+
+otus_dist = as.matrix((vegdist(log_comm_rare, "manhattan")))
+#perform NMDS
+ NMDS = metaMDS(otus_dist,trymax=100)
+stressplot(NMDS)
+ 
+#build a data frame with NMDS coordinates and metadata
+ MDS1 = NMDS$points[,1]
+ MDS2 = NMDS$points[,2]
+ NMDS2 = data.frame(MDS1 = MDS1, MDS2 = MDS2, Species = mpala_d$Species)
+ NMDS2$Species <- droplevels(NMDS2$Species)
+ 
+ NMDS2$Species <- factor(NMDS2$Species,levels(NMDS2$Species)[c(5,11,8,1,2,4,6,3,7,9,10)])
+levels(NMDS2$Species)
+
+head(NMDS2)
+
+ggplot(NMDS2, aes(x=MDS1, y=MDS2, col=Species)) +
+ geom_point() +
+ stat_ellipse(geom="polygon",level=0.50, aes(fill=Species, alpha=0.5)) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Mpala Species")
+
+adonis2(mpala_d[,6:334]~Species, data=mpala_d)
+
+
+(raremax_d <- min(rowSums(mpala_d[,6:334])))
+Srare_d <- rarefy(mpala_d[,6:334], raremax_d)
+mpala_d$Srare <- Srare_d
+
+
+levels(mpala_d$Species)[12] <- "Grevy's Zebra"
+levels(mpala_d$Species)
+mpala_d$Species <- factor(mpala_d$Species, levels(mpala_d$Species)[c(8,9,13,1,4,3,11,17,7,15,19,16,12,6,18,14,10,2,5)])
+
+plot2 <- ggplot(mpala_d, aes(x=Species, y=Srare))+
+  geom_boxplot(aes(col=Species, fill=Species, alpha=0.2))+
+  guides("")+
+  theme_bw(base_size=14)
+
+plot2 + theme(axis.text.x = element_text(angle=90, hjust=1))+ guides(color=F,fill=F, alpha=F)
+
+```
+
+
+
+
+```{r}
+## All locations
+lat_d <- d[d$Species%in%c("Elephant","Kudu","Warthog","Buffalo","Plains zebra","Impala"),]
+lat_d$Species <- droplevels(lat_d$Species)
+summary(lat_d$Species)
+
+
+comm_lat <- lat_d[,6:334]
+#Rarefy
+min_depth <- min(rowSums(comm_lat))
+comm_rare <- as.data.frame(round(rrarefy(comm_lat, min_depth)))
+
+log_comm_rare = log(comm_rare+1)
+rank.totus <- rankindex(as.matrix(log_comm_rare), log_comm_rare, indices = c("bray", "euclid", "manhattan", "horn"), method = "spearman")
+print(paste("The highest rank was given by the", names(sort(rank.totus, decreasing = TRUE)[1]), "method."))
+
+
+otus_dist = as.matrix((vegdist(log_comm_rare, "manhattan")))
+#perform NMDS
+ NMDS = metaMDS(otus_dist,trymax=100)
+stressplot(NMDS)
+ 
+#build a data frame with NMDS coordinates and metadata
+ MDS1 = NMDS$points[,1]
+ MDS2 = NMDS$points[,2]
+ NMDS3 = data.frame(MDS1 = MDS1, MDS2 = MDS2, Species = lat_d$Species, Location= lat_d$Location)
+NMDS3$Species <- factor(NMDS3$Species, levels(NMDS3$Species)[c(2,3,4,6,5,1)])
+head(NMDS3)
+
+ggplot(NMDS3, aes(x=MDS1, y=MDS2, col=Species, Type=Location)) +
+ geom_point() +
+ stat_ellipse(level=0.50, geom="polygon",aes(fill=Species, alpha=-.5)) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Species and Locations")
+
+
+NMDS3$Location <- factor(NMDS3$Location, levels(NMDS3$Location)[c(5,9,7,6,3,8,2,4,1)])
+ggplot(NMDS3, aes(x=MDS1, y=MDS2, col=Location)) +
+ geom_point() +
+ stat_ellipse(level=0.50) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Mpala Species")
+
+adonis2(lat_d[,6:334]~Species+Location+Species*Location, data=lat_d)
+
+
+
+
+```
+
+
+```{r}
+
+### Now look at specific locations -- is there a lat gradient in diversity? NEED TO RAREFY BY READ DEPTH
+
+lat_d$Location <- factor(lat_d$Location, levels(lat_d$Location)[c(5,9,7,6,3,8,2,4,1)])
+
+lat_d$S <- specnumber(lat_d[,6:334])
+plot(S~Species,data=lat_d)
+plot(S~Location, data=lat_d)
+
+# observed number of species
+(raremax <- min(rowSums(lat_d[,6:334])))
+Srare <- rarefy(lat_d[,6:334], raremax)
+lat_d$Srare <- Srare
+
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+
+m <- lmer(Srare~Latitude+I(Latitude^2)+(1+Latitude|Species),data=lat_d)
+m_null <- lmer(Srare~(1|Species),data=lat_d)
+summary(m)
+plot(fitted(m)~lat_d$Srare)
+r.squaredGLMM(m,m_null)
+m2 <- lmer(Srare~Location+(1|Species),data=lat_d)
+r.squaredGLMM(m2)
+difflsmeans(m2)
+
+lat_d$Species <- factor(lat_d$Species, levels(lat_d$Species)[c(2,1,5,4,3,6)])
+ggplot(lat_d,aes(x=Species, y=Srare))+
+  geom_boxplot(aes(col=Species, Type=Location))
+
+lat_d$logS <- log(lat_d$S)
+hist(lat_d$logS)
+
+# Ok what if I replace these with latitudes???
+
+lat_d$Latitude <- rep(0,length(lat_d$Location))
+lat_d$Latitude[lat_d$Location=="MRC"] <- 0.29
+lat_d$Latitude[lat_d$Location=="SER"] <- -2.40
+lat_d$Latitude[lat_d$Location=="NYI"] <- -10.80
+lat_d$Latitude[lat_d$Location=="NIA"] <- -12.48
+lat_d$Latitude[lat_d$Location=="KAF"] <- -14.52
+lat_d$Latitude[lat_d$Location=="PNG"] <- -18.78
+lat_d$Latitude[lat_d$Location=="HWA"] <- -18.99
+lat_d$Latitude[lat_d$Location=="KNP"] <- -23.95
+lat_d$Latitude[lat_d$Location=="HIP"] <- -28.27
+
+ggplot(lat_d, aes(x=Location,y=Srare, Type=Species))+
+  #geom_smooth(method="gam",formula=y~poly(x,2))+
+  geom_point(aes(color=Location))+
+  geom_boxplot(aes(color=Location, Type=Species))
+  facet_wrap(~Species)
+
+
+lat_d$scale_L <- scale(lat_d$Latitude)
+
+
+
+b <- aggregate(.~Species+Location, data=lat_d[,c(1,5,6:334)], FUN=mean)
+levelplot(as.matrix(b[,2:20]))
+
+b2 <- gather(b,key=OTU, value=Reads,-c(Species,Location))
+b2$OTU <- as.factor(b2$OTU)
+correct <- row.names(blah)[ord]
+levels(b2$OTU) <- correct
+levels(b2$OTU)
+b2$lRead <- sqrt(b2$Reads)
+b2$OTU <- factor(b2$OTU,levels(b2$OTU)[ord])
+levelplot(lRead~OTU*Species, data=b2, col.regions=colorRampPalette(c("white","orange","red")))
+
+b3 <- b2[order(b2$lRead,decreasing=F),]
+
+sum(summary(lat_d$Species))
+
+
+ggplot(lat_d,aes(x=Species,y=V1))+
+  geom_boxplot(aes(col=Location))
+
+for(i in 6:20){
+  p <- ggplot(lat_d,aes(x=Species, y=lat_d[,i]))+
+    geom_boxplot(aes(col=Location))
+  print(p)
+}
+
+
+
+###########
+ggplot(b2,aes(x=OTU, y=Species, z=lRead))+
+  geom_tile(aes(fill=lRead))+
+  scale_fill_gradient(low="white",high="red")
+
+blah <- cor(b[,3:331])
+ord <- order.dendrogram(as.dendrogram(hclust(dist(blah))))
+
+pl <- levelplot(blah[ord, ord], at = do.breaks(c(-1.01,
++     1.01), 20), scales = list(x = list(rot = 90)),col.regions=colorRampPalette(c("navy","gray","cyan")))
+print(pl)
+
+plot(hclust(dist(blah)),labels=F)
+hh <- hclust(dist(blah))
+
+
+```
+
+
+
+```{r}
+
+
+
+
+length(which(colSums(d[,6:334])>100))
+# Only 189 OTUs have more than 100 reads total
+# To avoid tag jumping, could clean this up by removing OTUs that comprise <1% of total reads per sample
+
+# Create a vector of rowsums
+d$TotReads <- rowSums(d[,6:334])
+d[1,]
+e <- d
+e[,6:334] <- d[,6:334]/d[,335]*100
+
+for(i in 1:length(e$Location)){
+  e[i,which(e[i,6:334]<1)+5] <- 0
+}
+
+head(e)
+colSums(e[,6:334])
+
+f <- d[,which(colSums(e[,6:334])>0)+5]
+g <- cbind(d[,1:5],f)
+dim(g) # 503 samples and 93 OTUs
+
+hist(log(colSums(g[6:98])))
+hist(rowSums(g[,6:98]))
+
+# Now do what I did above using the g dataset
+
+mpala_g <- g[g$Location=="MRC",]
+(raremax_g <- min(rowSums(mpala_g[,6:98])))
+Srare_g <- rarefy(mpala_g[,6:98], raremax_g)
+mpala_g$Srare <- Srare_g
+hist(Srare_g)
+
+levels(mpala_g$Species)[12] <- "Grevy's Zebra"
+levels(mpala_g$Species)
+mpala_g$Species <- factor(mpala_g$Species, levels(mpala_g$Species)[c(8,9,13,1,4,3,11,17,7,15,19,16,12,6,18,14,10,2,5)])
+
+
+ggplot(mpala_g, aes(x=Species,y=Srare))+
+  geom_boxplot(aes(col=Species))
+
+plot3 <- ggplot(mpala_g, aes(x=Species, y=Srare))+
+  geom_boxplot(aes(col=Species, fill=Species, alpha=0.2))+
+  guides("")+
+  theme_bw(base_size=14)
+
+
+plot3 + theme(axis.text.x = element_text(angle=90, hjust=1))+ guides(color=F,fill=F, alpha=F)
+
+
+### Now NMDS
+# only use species that have enough counts
+summary(mpala_g$Species)
+comm_mat <- mpala_g[mpala_g$Species%in%c("Elephant","Giraffe","Buffalo","Cow","Grevy's Zebra","Plains zebra","Eland","Hartebeest","Impala","Grants Gazelle","Dik-dik"),6:98]
+#Rarefy
+min_depth <- min(rowSums(comm_mat))
+comm_rare <- as.data.frame(round(rrarefy(comm_mat, min_depth)))
+
+log_comm_rare = log(comm_rare+1)
+rank.totus <- rankindex(as.matrix(log_comm_rare), comm_rare, indices = c("bray", "euclid", "manhattan", "horn"), method = "spearman")
+print(paste("The highest rank was given by the", names(sort(rank.totus, decreasing = TRUE)[1]), "method."))
+
+
+otus_dist = as.matrix((vegdist(comm_rare, "bray")))
+#perform NMDS
+NMDS = metaMDS(otus_dist,trymax=100)
+stressplot(NMDS)
+NMDS$stress
+ 
+#build a data frame with NMDS coordinates and metadata
+ MDS1 = NMDS$points[,1]
+ MDS2 = NMDS$points[,2]
+ NMDS2 = data.frame(MDS1 = MDS1, MDS2 = MDS2, Species = mpala_g$Species[mpala_g$Species%in%c("Elephant","Giraffe","Buffalo","Cow","Grevy's Zebra","Plains zebra","Eland","Hartebeest","Impala","Grants Gazelle","Dik-dik")])
+ NMDS2$Species <- droplevels(NMDS2$Species)
+ 
+levels(NMDS2$Species)
+
+head(NMDS2)
+
+ggplot(NMDS2, aes(x=MDS1, y=MDS2, col=Species)) +
+ geom_point() +
+ stat_ellipse(geom="polygon",level=0.50, aes(fill=Species, alpha=0.02)) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Mpala Species")
+
+
+
+
+
+
+
+
+## All locations
+lat_g <- g[g$Species%in%c("Elephant","Kudu","Warthog","Buffalo","Plains zebra","Impala"),]
+lat_g$Species <- droplevels(lat_g$Species)
+summary(lat_g$Species)
+
+
+comm_lat <- lat_g[,6:98]
+#Rarefy
+min_depth <- min(rowSums(comm_lat))
+comm_rare <- as.data.frame(round(rrarefy(comm_lat, min_depth)))
+
+log_comm_rare = log(comm_rare+1)
+rank.totus <- rankindex(as.matrix(log_comm_rare), comm_rare, indices = c("bray", "euclid", "manhattan", "horn"), method = "spearman")
+print(paste("The highest rank was given by the", names(sort(rank.totus, decreasing = TRUE)[1]), "method."))
+
+
+otus_dist = as.matrix((vegdist(log_comm_rare, "bray")))
+#perform NMDS
+ NMDS = metaMDS(otus_dist,trymax=100)
+stressplot(NMDS)
+ 
+#build a data frame with NMDS coordinates and metadata
+ MDS1 = NMDS$points[,1]
+ MDS2 = NMDS$points[,2]
+ NMDS3 = data.frame(MDS1 = MDS1, MDS2 = MDS2, Species = lat_g$Species, Location= lat_g$Location)
+NMDS3$Species <- factor(NMDS3$Species, levels(NMDS3$Species)[c(2,3,4,6,5,1)])
+head(NMDS3)
+
+ggplot(NMDS3, aes(x=MDS1, y=MDS2, col=Species, Type=Location)) +
+ geom_point(aes(size=3)) +
+ #stat_ellipse(level=0.50, geom="polygon",aes(fill=Species, alpha=-.5)) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Species and Locations")
+
+
+NMDS3$Location <- factor(NMDS3$Location, levels(NMDS3$Location)[c(5,9,7,6,3,8,2,4,1)])
+ggplot(NMDS3, aes(x=MDS1, y=MDS2, col=Location)) +
+ geom_point() +
+ #stat_ellipse(level=0.50) +
+ theme_bw() +
+ labs(title = "NMDS Plot of Mpala Species")
+
+
+
+
+
+
+
+
+
+### Now look at specific locations -- is there a lat gradient in diversity? NEED TO RAREFY BY READ DEPTH
+
+lat_g$Location <- factor(lat_g$Location, levels(lat_g$Location)[c(5,9,7,6,3,8,2,4,1)])
+
+lat_g$S <- specnumber(lat_g[,6:98])
+plot(S~Species,data=lat_g)
+plot(S~Location, data=lat_g)
+
+# observed number of species
+(raremax <- min(rowSums(lat_g[,6:98])))
+Srare <- rarefy(lat_g[,6:98], raremax)
+lat_g$Srare <- Srare
+
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+# Ok what if I replace these with latitudes???
+
+lat_g$Latitude <- rep(0,length(lat_d$Location))
+lat_g$Latitude[lat_d$Location=="MRC"] <- 0.29
+lat_g$Latitude[lat_d$Location=="SER"] <- -2.40
+lat_g$Latitude[lat_d$Location=="NYI"] <- -10.80
+lat_g$Latitude[lat_d$Location=="NIA"] <- -12.48
+lat_g$Latitude[lat_d$Location=="KAF"] <- -14.52
+lat_g$Latitude[lat_d$Location=="PNG"] <- -18.78
+lat_g$Latitude[lat_d$Location=="HWA"] <- -18.99
+lat_g$Latitude[lat_d$Location=="KNP"] <- -23.95
+lat_g$Latitude[lat_d$Location=="HIP"] <- -28.27
+
+
+m <- lmer(Srare~Latitude+I(Latitude^2)+(1+Latitude|Species),data=lat_g)
+m_null <- lmer(Srare~(1|Species),data=lat_g)
+summary(m)
+plot(fitted(m)~lat_g$Srare)
+r.squaredGLMM(m,m_null)
+m2 <- lmer(Srare~Location+(1|Species),data=lat_g)
+r.squaredGLMM(m2)
+difflsmeans(m2)
+
+lat_g$Species <- factor(lat_g$Species, levels(lat_g$Species)[c(2,1,5,4,3,6)])
+ggplot(lat_g,aes(x=Species, y=Srare))+
+  geom_boxplot(aes(col=Species))
+
+lat_d$logS <- log(lat_d$S)
+hist(lat_d$logS)
+
+
+
+ggplot(lat_g, aes(x=Latitude,y=Srare, Type=Species))+
+  geom_smooth(method="gam",formula=y~poly(x,2))+
+  geom_point(aes(color=Location))+
+  geom_boxplot(aes(color=Location, Type=Species))+
+  facet_wrap(~Species)
+
+
+
+
+
+#### Clustering stuff
+
+b <- aggregate(.~Species, data=mpala_g[,c(5,6:98)], FUN=mean)
+b2 <- gather(b,key=OTU, value=Reads,-c(Species))
+b2$OTU <- as.factor(b2$OTU)
+
+blah <- cor(b[,2:94])
+ord <- order.dendrogram(as.dendrogram(hclust(dist(blah))))
+
+pl <- levelplot(blah[ord, ord], at = do.breaks(c(-1.01,
++     1.01), 20), scales = list(x = list(rot = 90)),col.regions=colorRampPalette(c("navy","gray","cyan")))
+print(pl)
+
+plot(hclust(dist(blah)),labels=F)
+hh <- hclust(dist(blah))
+
+```
+
+
+```{r}
+
+library(latticeExtra)
+data(mtcars)
+head(b2)
+head(mtcars)
+bnew <- spread(b2,key=OTU,value=Reads)
+head(bnew)
+
+str(mtcars)
+str(bnew)
+row.names(bnew) <- bnew[,1]
+bnew <- bnew[,-1]
+str(bnew)
+
+
+x  <- t(as.matrix(scale(mtcars)))
+x2 <- t(as.matrix(bnew)) # didn't scale because it's the same measurement
+head(x2)
+head(x)
+
+dd.row <- as.dendrogram(hclust(dist(x)))
+dd.row2 <- as.dendrogram(hclust(dist(x2)))
+
+row.ord <- order.dendrogram(dd.row)
+row.ord2 <- order.dendrogram(dd.row2)
+
+dd.col <- as.dendrogram(hclust(dist(t(x))))
+dd.col2 <- as.dendrogram(hclust(dist(t(x2))))
+
+col.ord <- order.dendrogram(dd.col)
+col.ord2 <- order.dendrogram(dd.col2)
+
+library(lattice)
+
+levelplot(x[row.ord, col.ord],
+      aspect = "fill",
+      scales = list(x = list(rot = 90)),
+      colorkey = list(space = "left"),
+      legend =
+      list(right =
+           list(fun = dendrogramGrob,
+                args =
+                list(x = dd.col, ord = col.ord,
+                     side = "right",
+                     size = 10)),
+           top =
+           list(fun = dendrogramGrob,
+                args =
+                list(x = dd.row,
+                     side = "top",
+                     size = 10))))
+
+
+
+
+levelplot(x2[row.ord2, col.ord2],
+      aspect = "fill",
+      scales = list(x = list(rot = 90)),
+      colorkey = list(space = "left"),
+      col.regions=colorRampPalette(c("light gray","navy")),
+      legend =
+      list(right =
+           list(fun = dendrogramGrob,
+                args =
+                list(x = dd.col2, ord = col.ord2,
+                     side = "right",
+                     size = 10)),
+           top =
+           list(fun = dendrogramGrob,
+                args =
+                list(x = dd.row2,
+                     side = "top",
+                     size = 10))))
+
+
+```
