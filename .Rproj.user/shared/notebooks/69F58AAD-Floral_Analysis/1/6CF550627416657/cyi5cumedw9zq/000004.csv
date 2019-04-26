@@ -1,0 +1,3 @@
+"0","H_mean_table <- floral.max %>% ddply(.(PLOT), summarize, mean=list(mean_se(H))) %>% unnest(mean) %>% mutate(SE=(ymax-ymin)/2)"
+"0","H_mean_table <- floral.max %>% ddply(.(SITE), summarize, mean=list(mean_se(H))) %>% unnest(mean) %>% mutate(SE=(ymax-ymin)/2) %>% bind_rows(H_mean_table) %>% dplyr::select(SITE, y, SE, PLOT) %>% dplyr::rename(H=y)"
+"0","View(H_mean_table)"

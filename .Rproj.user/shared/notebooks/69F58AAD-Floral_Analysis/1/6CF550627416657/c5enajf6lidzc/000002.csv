@@ -1,0 +1,3 @@
+"0","ip_mean_table <- floral.max %>% filter(!is.nan(invasive_prop)) %>% filter(SITE!=""Mesic"") %>% ddply(.(PLOT), summarize, mean=list(mean_se(invasive_prop))) %>% unnest(mean) %>% mutate(SE=(ymax-ymin)/2)"
+"0","ip_mean_table <- floral.max %>% filter(!is.nan(invasive_prop)) %>% filter(SITE!=""Mesic"") %>% ddply(.(SITE), summarize, mean=list(mean_se(invasive_prop))) %>% unnest(mean) %>% mutate(SE=(ymax-ymin)/2) %>% bind_rows(ip_mean_table) %>% dplyr::select(SITE, y, SE, PLOT) %>% dplyr::rename(Invasive_Proportion=y)"
+"0","View(ip_mean_table)"

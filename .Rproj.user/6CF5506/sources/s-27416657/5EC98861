@@ -1,0 +1,24 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1551404906558.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1459621852",
+    "id" : "5EC98861",
+    "lastKnownWriteTime" : 1556247698,
+    "last_content_update" : 1556247699426,
+    "path" : "D:/Dropbox/Projects/Watering Holes/Data_all/Genetics/Analysis2/Rwork_nems/nem_data/Psite_OTUs.Rmd",
+    "project_path" : "Psite_OTUs.Rmd",
+    "properties" : {
+        "cursorPosition" : "151,43",
+        "last_setup_crc32" : "27416657bb338d19",
+        "scrollLine" : "144",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

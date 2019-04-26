@@ -1,0 +1,28 @@
+"0","library(tidyverse)
+#install.packages(""car"")
+library(car)
+"
+"2","package ‘car’ was built under R version 3.5.2"
+"2","Loading required package: carData
+"
+"2","package ‘carData’ was built under R version 3.5.2"
+"2","
+Attaching package: ‘car’
+
+"
+"2","The following object is masked from ‘package:dplyr’:
+
+    recode
+
+"
+"2","The following object is masked from ‘package:purrr’:
+
+    some
+
+"
+"0","library(plyr)"
+"0","library(dplyr) #data transformations"
+"0","#install.packages(""mosaic"")"
+"0","library(mosaic) #assignment of native and invasive status via derivedFactor"
+"2","Error in library(mosaic) : there is no package called â€˜mosaicâ€™
+"

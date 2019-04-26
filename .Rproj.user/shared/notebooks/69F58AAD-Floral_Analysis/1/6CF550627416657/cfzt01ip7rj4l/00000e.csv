@@ -1,0 +1,4 @@
+"0","floral.dat <- filter(floral.dat, !is.na(SURVEY)) 
+"
+"2","Error: object 'SURVEY' not found
+"

@@ -1,0 +1,6 @@
+"0","plot(mpalaMDS$points,type=""n"")
+points(mpalaMDS$points, col = as.numeric(otus_mpala$Species))
+mpala.sh <- Shepard(mpala_d3, mpalaMDS$points)
+plot(mpala.sh, pch = ""."")
+"
+"0","lines(mpala.sh$x, mpala.sh$yf, type = ""S"")"

@@ -1,0 +1,10 @@
+"0","# Another plot
+ggplot(floral.max, aes(x=ps, y=H))+
+  geom_point(aes(color=SITE), size=2, alpha=0.5)+
+  geom_point(aes(x=ps2, y=H, color=SITE), shape=2, size=4, alpha=0.5)+
+  theme_bw()+
+  geom_abline(slope=1, yintercept=0)+
+  xlab(""Predicted H"")+
+  ylab(""Actual H"")
+"
+"2","Ignoring unknown parameters: yintercept"

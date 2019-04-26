@@ -1,0 +1,10 @@
+"0","head(otus_df3) 
+"
+"0","# currently all the data is stored as a proportion, but we should make this into a binary at this point, given that reads can be so variable within a sample."
+"0","otus_df4 <- otus_df3 %>%"
+"0","  mutate_at(vars(V1:V302), funs(ifelse(.>0,1,0))) # binarize 302 for the 1% cutoff 208 for 5%"
+"0","otus_df4$S <- rowSums(otus_df4[,6:98])"
+"0","# looking at average # of OTUS per sample:"
+"0","ggplot(otus_df4, aes(x=Species, y=S))+"
+"0","  geom_jitter(aes(col=Species))+"
+"0","  theme(axis.text.x=element_text(angle=45,hjust=1))"

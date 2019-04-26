@@ -1,0 +1,6 @@
+"0","length(which(colSums(otus_df3[,6:79])==0)) # check that the code worked
+"
+"1","[1]"
+"1"," 0"
+"1","
+"

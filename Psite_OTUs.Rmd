@@ -1,0 +1,835 @@
+---
+title: "Nematode_Report"
+author: "Georgia Titcomb"
+date: "February 28, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Import data
+
+```{r cars}
+otus <- read.csv("with_names.csv")
+
+tab3 <- read.table("OTU_log3.tab", header=T)
+dim(tab3)
+head(tab3[,1:10])
+
+# This is the other OTU table based on different filtering thresholds
+#tab35 <- read.table("OTU_log3.5.tab")
+#dim(tab35)
+```
+
+```{r}
+# average reads per sample
+summary(colSums(tab3[31:694]))
+
+par(mfrow=c(1,2))
+
+hist(colSums(tab3[31:694]), main="Distribution of reads per sample")
+hist(log(colSums(tab3[31:694])), main="Distribution of log(reads per sample)")
+min(colSums(tab3[31:694]))
+```
+
+The mean number of reads per sample is a little over 15,000, but with a median over ~10,000. From the fecal egg count data, it seems pretty reasonable to say that most of these are actually true signals of nematode infections, at least for impala and warthog. 
+
+```{r}
+library("vegan")
+
+# First taking the very first column (sample):
+specnumber(tab3[,31])
+hist(log(tab3[,31]), main="Distribution of log(reads) for OTUs in sample 1")
+
+```
+Just looking at the very first sample, we can see that there are 57 "species", with one species having an very high number of reads, and lots of other columns with very few reads. It might be the case that some of these are errors, fragments(?), or reads corresponding to genus or family-level, as it's pretty unlikely that there are 57 different nematode species.
+
+```{r}
+library(tidyverse)
+
+# Filtering the dataset to contain only IDs that were to species-level
+species = filter(tab3, rank=="species")
+dim(species)
+# There are 119 different clusters
+levels(droplevels(species$scientific_name))
+
+# There are 9 matched species
+head(species)
+ggplot(species, aes(x=scientific_name, y=as.factor(cluster)))+
+  geom_point(aes(color=genus))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Now repeating for genus
+genus = filter(tab3, rank=="genus")
+dim(genus)
+# There are 84 different clusters
+levels(droplevels(genus$genus_name))
+# Which matched 3 different genera
+
+ggplot(genus, aes(x=genus_name, y=as.factor(cluster)))+
+  geom_point(aes(color=family_name))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+It definitely looks as though there might be some redundancies in the clustering. Three species IDs have many associated clusters. Interestingly, it looks as though we were able to distinguish among coronocyclus species.
+
+For the genus data, we have no idea how many species of cooperia, oesophagostomum, and trichostrongylus these clusters correspond to. The degree of similarity within each species will likely vary across taxa, so it would be challenging to apply the clustering levels from the species data to the genus data.
+
+```{r}
+# Next step is to control for the number of reads 
+head(otus[,1:10])
+dim(otus)
+
+## standardize to make each entry the proportion of total reads
+otus$Total <- apply(otus[,6:334],1,sum)
+otus_std <- otus%>%
+  mutate_at(vars(V1:V329), funs(./Total))
+head(otus_std[,1:10])
+
+# now remove clusters that are less than 5% of reads
+otus_df2 <- otus_std %>%
+  mutate_at(vars(V1:V329), funs(ifelse(.<0.01,0,.)))
+
+# how many columns are now 0?
+length(which(colSums(otus_df2[,6:334])==0))
+# that's a lot!
+
+# removing them for simplicity:
+otus_df3 <- otus_df2[,-((which(colSums(otus_df2[,6:334])==0))+5)]
+head(otus_df3[,1:10])
+dim(otus_df3)
+length(which(colSums(otus_df3[,6:79])==0)) # check that the code worked
+
+# We've now reduced the number of clusters to < 100!
+```
+
+Now that we have reduced the number of clusters, we can go back and see how this new dataset might compare to the old one
+
+```{r}
+#unique(tab3$cluster)
+tab3$cluster2 = paste("V",seq(1:329), sep="")
+
+# now select only the otus that weren't filtered out:
+tab4 <- tab3[which(tab3$cluster2 %in% names(otus_df3)),]
+dim(tab4)
+
+
+species2 = filter(tab4, rank=="species")
+dim(species2)
+# There are 30 different clusters
+levels(droplevels(species2$scientific_name))
+
+# There are 7 matched species
+head(species2)
+ggplot(species2, aes(x=scientific_name, y=as.factor(cluster)))+
+  geom_point(aes(color=best_identity), size=2.5)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Now repeating for genus
+genus2 = filter(tab4, rank=="genus")
+dim(genus2)
+# There are 22 different clusters
+levels(droplevels(genus2$genus_name))
+# Which matched 3 different genera
+
+ggplot(genus2, aes(x=genus_name, y=as.factor(cluster)))+
+  geom_point(aes(color=family_name))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+This definitely simplified the dataset considerably!
+Now that the dataset is a little more manageable, we can explore patterns.
+
+But first! Compare to FECS!
+
+```{r}
+# compare these to the fecal egg counts
+head(otus_df3)
+otus_df3$Number <- str_pad(otus_df3$Number, 3, pad = "0")
+otus_df3$ID <- paste(otus_df3$Location,otus_df3$Year,otus_df3$Number, sep="_")
+FECs <- read.csv("FEC_comparison.csv")
+head(FECs)
+names(otus_df3)[100] <- "Sample"
+length(which(FECs$Sample %in% otus_df3$Sample))
+
+together <- right_join(otus_df3[,c(5,99,100)],FECs)
+
+together2 <- together %>%
+  mutate_at(vars(Total), funs(ifelse(is.na(.)==T,0,.)))
+
+together
+
+ggplot(together2, aes(x=FEC, y=Total))+
+  geom_point(aes(color=log(Reads+1)))
+
+ggplot(together2, aes(x=FEC, y=Total))+
+  geom_point(size=2, aes(color=log(Total+1)))
+
+
+length(which(together2$FEC > 0 & together2$Reads == 0))/length(together2$FEC)
+```
+
+These changes helped a little with our false positives. After filtering, we found that every sample with reads had a positive FEC count. The only downside is that it seems to be a little conservative -- there were several samples with positive FECs that weren't detected. However, we'd much rather have the errors this way than the other!
+
+
+```{r}
+# First, I'm simply going to do a species richness comparison within host species, using OTUs as the richness metric.
+
+head(otus_df3) 
+# currently all the data is stored as a proportion, but we should make this into a binary at this point, given that reads can be so variable within a sample.
+
+otus_df4 <- otus_df3 %>%
+  mutate_at(vars(V1:V302), funs(ifelse(.>0,1,0))) # binarize 302 for the 1% cutoff 208 for 5%
+
+otus_df4$S <- rowSums(otus_df4[,6:98])
+
+# looking at average # of OTUS per sample:
+ggplot(otus_df4, aes(x=Species, y=S))+
+  geom_jitter(aes(col=Species))+
+  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+library(Rmisc)
+meanS <- summarySE(otus_df4, measurevar="S", groupvars="Species")
+mean(otus_df4$S)
+
+ggplot(otus_df4, aes(x=Species, y=S))+
+  geom_jitter(aes(col=Species), height=0.2)+
+  geom_point(data=meanS, aes(x=Species, y=S))+
+  geom_errorbar(data=meanS, aes(x=Species, ymin=S-se, ymax=S+se))+
+  theme(axis.text.x=element_text(angle=45,hjust=1))
+
+```
+
+It looks like both zebra species, giraffe, grant's gazelle have higher species richness, we have to be careful, since this is OTU richness. We might find that different types of parasite are more divergent than others, for instance.
+
+Now for some ordination:
+
+```{r}
+
+otus_df2
+library(MASS)
+
+d <- dist(otus_df4[,6:98], method="binary")
+#z <- isoMDS(d, y=cmdscale(d,2), k=2) throws an error
+
+otus_df4%>%
+  filter(Location=="MRC")%>%
+  group_by(Species)%>%
+  tally()
+```
+
+```{r}
+# Using only the most abundant species:
+
+otus_mpala <- otus_df4%>%
+  filter(Location=="MRC")%>%
+  filter(Species %in% c("Buffalo", "DikDik", "Eland", "Elephant", "Grants_Gazelle", "Grevys_Zebra", "Hartebeest", "Impala", "Plains_Zebra", "Hippo", "Giraffe", "Warthog", "Cow", "Donkey"))
+
+# Now remove missing columns
+dim(otus_mpala)
+otus_mpala <- otus_mpala[,-(which(colSums(otus_mpala[,6:98])==0)+5)]
+dim(otus_mpala)
+#names(otus_mpala)
+mpala_d <- dist(otus_mpala[,6:71], method="binary")
+#levelplot(as.matrix(mpala_d))
+mpala_d2 <- as.data.frame(as.matrix(mpala_d))
+levelplot(as.matrix(mpala_d2), col.regions=gray(0:100/100))
+
+#convergence issues when distance = 0, so replace with very small distance
+for(i in 1:length(mpala_d2)){
+  for(j in 1:length(mpala_d2)){
+    mpala_d2[i,j] <- ifelse(mpala_d2[i,j]==0 & i!=j, runif(1,min=0.01,max=0.02), mpala_d2[i,j])
+  }
+}
+
+mpala_d3 <- as.dist(mpala_d2)
+levelplot(as.matrix(mpala_d3), col.regions=gray(0:100/100)) # appears very similar
+
+# Find the optimal number of dimensions
+elbow <- data.frame(k=seq(from=1, to=5),stress=rep(0,5))
+elbow
+for(i in 1:5){
+  elbow[i,2] <- isoMDS(mpala_d3, y=cmdscale(mpala_d3, elbow[i,1]), k=elbow[i,1])$stress
+}
+plot(elbow)
+lines(elbow)
+# 3 chosen
+
+mpalaMDS <- isoMDS(mpala_d3,y=cmdscale(mpala_d3, 3), k=3)
+
+
+plot(mpalaMDS$points,type="n")
+points(mpalaMDS$points, col = as.numeric(otus_mpala$Species))
+mpala.sh <- Shepard(mpala_d3, mpalaMDS$points)
+plot(mpala.sh, pch = ".")
+lines(mpala.sh$x, mpala.sh$yf, type = "S")
+
+
+```
+
+
+```{r}
+# Cmpute MDS
+library(ggpubr)
+mds <- mpala_d3 %>%          
+  isoMDS(k=3) %>%
+  .$points %>%
+  as_tibble()
+colnames(mds) <- c("Dim.1", "Dim.2")
+# Plot MDS
+
+mds$Species <- otus_mpala$Species
+
+ggplot(data=mds, aes(x=Dim.1, y=Dim.2))+
+  geom_jitter(aes(color=Species), size=2)
+
+
+```
+
+```{r}
+mds$SpeciesN <- as.integer(mds$Species)
+
+# Plot and color by groups
+ggscatter(mds, x = "Dim.1", y = "Dim.2", 
+          #label = rownames(swiss),
+          color = "Species",
+          palette = NULL,
+          size = 2, 
+          ellipse = TRUE,
+          ellipse.type = "confidence",
+          ellipse.level=0.95,
+          repel = TRUE)
+
+
+```
+
+The warthog and donkey data are looking a little wacky...And we only have a few points...Omitting these:
+
+```{r}
+
+otus_mpala <- otus_df4%>%
+  filter(Location=="MRC")%>%
+  filter(Species %in% c("Buffalo", "DikDik", "Eland", "Elephant", "Grants_Gazelle", "Grevys_Zebra", "Hartebeest", "Impala", "Plains_Zebra", "Hippo", "Giraffe","Cow"))
+
+# Now remove missing columns
+dim(otus_mpala)
+otus_mpala <- otus_mpala[,-(which(colSums(otus_mpala[,6:98])==0)+5)]
+dim(otus_mpala)
+mpala_d <- dist(otus_mpala[,6:71], method="binary")
+mpala_d2 <- as.data.frame(as.matrix(mpala_d))
+
+for(i in 1:length(mpala_d2)){
+  for(j in 1:length(mpala_d2)){
+    mpala_d2[i,j] <- ifelse(mpala_d2[i,j]==0 & i!=j, runif(1,min=0.02,max=0.06), mpala_d2[i,j])
+  }
+}
+
+mpala_d3 <- as.dist(mpala_d2)
+
+# Find optimal k again:
+# Find the optimal number of dimensions
+elbow <- data.frame(k=seq(from=2, to=7),stress=rep(0,6))
+elbow
+for(i in 1:6){
+  elbow[i,2] <- isoMDS(mpala_d3, y=cmdscale(mpala_d3, elbow[i,1]), k=elbow[i,1])$stress
+}
+plot(elbow)
+lines(elbow)
+
+# 3 again
+
+mds <- mpala_d3 %>%          
+  isoMDS(k=3) %>%
+  .$points %>%
+  as_tibble()
+colnames(mds) <- c("Dim.1", "Dim.2","Dim.3")
+# Plot MDS
+
+mds$Species <- otus_mpala$Species
+
+ggplot(data=mds, aes(x=Dim.1, y=Dim.2))+
+  geom_jitter(aes(color=Species), size=2)
+
+mds$SpeciesN <- as.integer(mds$Species)
+
+# Plot and color by groups
+ggscatter(mds, x = "Dim.1", y = "Dim.2", 
+          #label = rownames(swiss),
+          color = "Species",
+          palette = NULL,
+          size = 1, 
+          ellipse = TRUE,
+          ellipse.type = "confidence",
+          ellipse.level=0.95,
+          repel = TRUE)
+
+```
+The best k was 3, so the points are actually in three dimensions. We can also plot in 3D space:
+
+```{r}
+
+library(plotly)
+
+#p <- plot_ly(mds, x=~Dim.1, y=~Dim.2, z=~Dim.3)
+#add_markers(p, color=~Species, size=2, colors="Set1")
+library(corpcor)
+library(rgl)
+
+# 3d plotting
+x=mds$Dim.1; y=mds$Dim.2;  z=mds$Dim.3
+col <- c("cyan", "lightblue", "purple", "plum", "mediumslateblue","mediumorchid", "magenta", "seagreen", "springgreen", "limegreen", "turquoise", "forestgreen")
+p <- plot_ly(mds, x =x, y = y, z = z,type = "scatter3d",
+         mode = "markers", marker = list(color = col[as.factor(mds$SpeciesN)],
+         showscale =F)
+       #, text = paste(df$C, df$R)
+      )
+groups <- mds$SpeciesN
+levs <- levels(as.factor(groups))
+group.col <- c("cyan", "lightblue", "purple", "plum", "mediumslateblue","mediumorchid", "magenta", "seagreen", "springgreen", "limegreen", "turquoise", "forestgreen") 
+for (i in 1:length(levs)) {
+group <- levs[i]
+selected <- groups == group
+xx <- x[selected]; yy <- y[selected]; zz <- z[selected]
+co<- cov(cbind(xx,yy,zz))
+S<- make.positive.definite(co)
+ellips <- ellipse3d(S, centre=c(mean(xx),mean(yy),mean(zz)), level = 0.95)
+p2<- add_trace(p, x = ellips$vb[1,], y = ellips$vb[2,], z = ellips$vb[3,]
+           ,type = 'scatter3d', size = 1      
+            ,opacity=1
+            ,color="black",
+           marker=list(color=group.col[i], line=list(width=0))
+            ,showlegend = F)
+ }
+print(p)
+
+```
+
+After talking to Rob, I should be using the relative read abundance rather than binary.
+
+```{r}
+head(otus_df3)
+# I've done within-sample RRA, but I need to do this across all samples
+
+
+
+
+
+
+
+otus_df3_B <- otus_df3%>%
+  filter(Species %in% c("Buffalo", "DikDik", "Eland", "Elephant", "Grants_Gazelle", "Grevys_Zebra", "Hartebeest", "Impala", "Plains_Zebra", "Hippo", "Giraffe","Cow", "Warthog","Donkey"))
+
+
+otus_d_B <- dist(otus_df3_B[,6:98]) # euclidean distance
+
+elbow <- data.frame(k=seq(from=1, to=6),stress=rep(0,6))
+elbow
+for(i in 1:6){
+  elbow[i,2] <- isoMDS(otus_d_B, y=cmdscale(otus_d_B, elbow[i,1]), k=elbow[i,1])$stress
+}
+plot(elbow)
+lines(elbow)
+
+# 2 or 3
+
+MDSall <- metaMDS(otus_df3_B[,6:98], k=4, trymax=100)
+plot(MDSall)
+
+mds <- otus_d_B %>%          
+  isoMDS(k=2) %>%
+  .$points %>%
+  as_tibble()
+colnames(mds) <- c("Dim.1", "Dim.2")
+
+# Plot MDS
+mds$Species <- otus_df3_B$Species
+
+ggplot(data=mds, aes(x=Dim.1, y=Dim.2))+
+  geom_jitter(aes(color=Species), size=2)
+
+mds$SpeciesN <- as.integer(mds$Species)
+
+# Plot and color by groups
+ggscatter(mds, x = "Dim.1", y = "Dim.2", 
+          #label = rownames(swiss),
+          color = "Species",
+          palette = NULL,
+          size = 1, 
+          ellipse = TRUE,
+          ellipse.type = "confidence",
+          ellipse.level=0.95,
+          repel = TRUE)
+
+
+
+```
+
+
+
+Some network exploration:
+
+```{r}
+
+dim(otus_df4)
+head(otus_df4)
+
+# next task is to aggregate by species
+
+otus_agg <- otus_mpala %>%
+  group_by(Species)%>%
+  summarize_at(vars(V1:V136),mean)
+
+levelplot(as.matrix(otus_agg[,2:53]))
+flip <- t(as.matrix(otus_agg[,2:53]))
+rownames(flip)
+colnames(flip) <- unlist(otus_agg[,1])
+library(igraph)
+net <- graph_from_incidence_matrix(flip, multiple=F)
+plot(net)
+
+# Ugh need to make adjacency matrix
+
+mat <- data.frame(matrix(nrow=12, ncol=12))
+
+for(i in 1:12){
+  for(j in 1:12){
+    mat[i,j] <- ifelse(i==j,0,length(which(which(otus_agg[i,2:53]>0)%in%which(otus_agg[j,2:53]>0))==T))
+  }
+}
+
+mat <- as.matrix(mat)
+rownames(mat) <- unlist(otus_agg[,1])
+colnames(mat) <- unlist(otus_agg[,1])
+net3 <- graph_from_adjacency_matrix(mat, mode="undirected", weighted=T)
+net3
+c_scale <- colorRamp(c('red','purple','blue', 'darkgray'))
+E(net3)$color = apply(c_scale(1/E(net3)$weight), 1, function(x) rgb(x[1]/255,x[2]/255,x[3]/255) )
+E(net3)$color="darkgrey"
+set.seed(27)
+coord <- layout_with_drl(net3,use.seed=T)
+plot(net3, layout=coord, edge.width=(E(net3)$weight)*0.4, vertex.color=group.col, vertex.frame.color=group.col, vertex.label.dist=-2, vertex.label.family="Segoe UI Semibold", vertex.label.color="black", vertex.label.degree = 90, vertex.label.cex=0.7)
+
+
+```
+
+This graph is weighted by the number of instances where the parasite also occurs.
+I can also try to make a network based on the prevalence. Here, I multiply the prevalences and sum them within the for-loop.
+
+```{r}
+
+mat2 <- data.frame(matrix(nrow=12, ncol=12))
+
+for(i in 1:12){
+  for(j in 1:12){
+    matchesL <- which(otus_agg[i,2:53]>0)%in%which(otus_agg[j,2:53]>0)
+    matchesR <- which(otus_agg[j,2:53]>0)%in%which(otus_agg[i,2:53]>0)
+    left <- which(otus_agg[i,2:53]>0)[matchesL]
+    right <- which(otus_agg[j,2:53]>0)[matchesR]
+    mat2[i,j] <- ifelse(i==j,0,ifelse(length(which(matchesL==T))==0,0,sum(otus_agg[i,left+1]*otus_agg[j,right+1])))
+  }
+}
+
+mat2 <- as.matrix(mat2)
+rownames(mat2) <- unlist(otus_agg[,1])
+colnames(mat2) <- unlist(otus_agg[,1])
+net3 <- graph_from_adjacency_matrix(mat2, mode="undirected", weighted=T)
+net3
+c_scale <- colorRamp(c('red','purple','blue', 'darkgray'))
+E(net3)$color="darkgrey"
+set.seed(27)
+coord <- layout_with_drl(net3,use.seed=T)
+plot(net3, layout=layout_with_gem, edge.width=(E(net3)$weight)*5, vertex.color=group.col, vertex.frame.color=group.col, vertex.label.dist=-2, vertex.label.family="Segoe UI Semibold", vertex.label.color="black", vertex.label.degree = 90, vertex.label.cex=0.7)
+
+
+
+```
+
+
+Can also make this network based on the mean prevalence
+
+```{r}
+
+mat3 <- data.frame(matrix(nrow=12, ncol=12))
+
+for(i in 1:12){
+  for(j in 1:12){
+    matchesL <- which(otus_agg[i,2:53]>0)%in%which(otus_agg[j,2:53]>0)
+    matchesR <- which(otus_agg[j,2:53]>0)%in%which(otus_agg[i,2:53]>0)
+    left <- which(otus_agg[i,2:53]>0)[matchesL]
+    right <- which(otus_agg[j,2:53]>0)[matchesR]
+    mat3[i,j] <- ifelse(i==j,0,ifelse(length(which(matchesL==T))==0,0,mean(unlist(otus_agg[i,left+1]*otus_agg[j,right+1]))))
+  }
+}
+
+mat3 <- as.matrix(mat3)
+rownames(mat3) <- unlist(otus_agg[,1])
+colnames(mat3) <- unlist(otus_agg[,1])
+net3 <- graph_from_adjacency_matrix(mat3, mode="undirected", weighted=T)
+net3
+c_scale <- colorRamp(c('red','purple','blue', 'darkgray'))
+E(net3)$color="darkgrey"
+set.seed(27)
+coord <- layout_with_drl(net3,use.seed=T)
+plot(net3, layout=layout_with_gem, edge.width=(E(net3)$weight)*25, vertex.color=group.col, vertex.frame.color=group.col, vertex.label.dist=-2, vertex.label.family="Segoe UI Semibold", vertex.label.color="black", vertex.label.degree = 90, vertex.label.cex=0.7)
+
+
+```
+
+From a parasite perspective:
+
+```{r}
+
+
+head(otus_mpala)
+sumV1 <- summarySE(otus_mpala, measurevar="V1", groupvars="Species")
+sumV1
+ggplot(sumV1, aes(x=Species, y=V1))+
+  geom_point(aes(col=Species, size=N))+
+  geom_errorbar(aes(ymin=V1-se, ymax=V1+se, col=Species))+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  ggtitle("Prevalence of Cooperia Species 1")
+
+tab3[tab3$cluster2=="V1",c(1:30)]
+
+
+```
+
+This is interesting because Cooperia is showing up in elephants, at very low levels, which is a little unusual...
+It's also showing up definitively in giraffe, which hasn't been recorded before, but the literature is INCREDIBLY sparse for this....(edit -- the book I have does show this)
+
+From some online searching, it looks like Cooperia fuelleborni is common in impala and buffalo. Interestingly, it is found in some zebra here -- I wonder if this is from ingesting larvae? This would mean that we'd potentially want to be careful about making conclusions about parasite sharing among grazers -- the sheer volume of material might make them bound eat large numbers of larvae without getting infected.
+
+We could look to see what the average number of reads are and try to use a cutoff threshold for these grazers.
+
+
+```{r}
+sumV2 <- summarySE(otus_mpala, measurevar="V2", groupvars="Species")
+ggplot(sumV2, aes(x=Species, y=V2))+
+  geom_point(aes(col=Species, size=N))+
+  geom_errorbar(aes(ymin=V2-se, ymax=V2+se, col=Species))+
+  theme(axis.text.x=element_text(angle=45,hjust=1))+
+  ggtitle("Prevalence of Oesophagostomum Species 1")
+
+tab3[tab3$cluster2=="V2",c(1:30)]
+
+```
+
+This is clearly a parasite of just Dik-dik.
+
+```{r}
+
+# looping through all the other variables
+
+for(i in 1:5){
+  sum <- summarySE(otus_mpala, measurevar=names(otus_mpala)[5+i], groupvars="Species")
+  names(sum)[3] <- "OTU"
+  paras <- tab3[tab3$cluster2 == names(otus_mpala)[5+i],]
+  p <- ggplot(sum, aes(x=Species, y=OTU))+
+    geom_point(aes(col=Species, size=N))+
+    geom_errorbar(aes(ymin=OTU-se, ymax=OTU+se, col=Species))+
+    theme(axis.text.x=element_text(angle=45, hjust=1))+
+    ggtitle(paste("Prevalence of",paras$rank[1],paras$scientific_name[1]))
+  print(p)
+}
+
+
+for(i in 5:10){
+  sum <- summarySE(otus_mpala, measurevar=names(otus_mpala)[5+i], groupvars="Species")
+  names(sum)[3] <- "OTU"
+  paras <- tab3[tab3$cluster2 == names(otus_mpala)[5+i],]
+  p <- ggplot(sum, aes(x=Species, y=OTU))+
+    geom_point(aes(col=Species, size=N))+
+    geom_errorbar(aes(ymin=OTU-se, ymax=OTU+se, col=Species))+
+    theme(axis.text.x=element_text(angle=45, hjust=1))+
+    ggtitle(paste("Prevalence of",paras$rank[1],paras$scientific_name[1]))
+  print(p)
+}
+
+
+for(i in 11:20){
+  sum <- summarySE(otus_mpala, measurevar=names(otus_mpala)[5+i], groupvars="Species")
+  names(sum)[3] <- "OTU"
+  paras <- tab3[tab3$cluster2 == names(otus_mpala)[5+i],]
+  p <- ggplot(sum, aes(x=Species, y=OTU))+
+    geom_point(aes(col=Species, size=N))+
+    geom_errorbar(aes(ymin=OTU-se, ymax=OTU+se, col=Species))+
+    theme(axis.text.x=element_text(angle=45, hjust=1))+
+    ggtitle(paste("Prevalence of",paras$rank[1],paras$scientific_name[1]))
+  print(p)
+}
+
+for(i in 21:52){
+  sum <- summarySE(otus_mpala, measurevar=names(otus_mpala)[5+i], groupvars="Species")
+  names(sum)[3] <- "OTU"
+  paras <- tab3[tab3$cluster2 == names(otus_mpala)[5+i],]
+  p <- ggplot(sum, aes(x=Species, y=OTU))+
+    geom_point(aes(col=Species, size=N))+
+    geom_errorbar(aes(ymin=OTU-se, ymax=OTU+se, col=Species))+
+    theme(axis.text.x=element_text(angle=45, hjust=1))+
+    ggtitle(paste("Prevalence of",paras$rank[1],paras$scientific_name[1]))
+  print(p)
+}
+
+```
+
+Clear lack of IDs make species IDs really challenging. 
+
+### Weird outliers
+# Cooperia in zebs
+
+```{r}
+
+zs <- filter(otus_df3, Species %in% c("Grevys_Zebra", "Plains_Zebra"))
+head(zs)
+#tab3$cluster2
+# recombine by names() and cluster 2
+names(zs) %in% tab3$cluster2
+# which cluster 2 ids correspond to coop?
+cooptab3 <- filter(tab3, genus_name=="Cooperia")
+cooptab3$cluster2
+
+b <- cooptab3$cluster2[cooptab3$cluster2%in%names(zs)]
+
+head(zs)
+dim(zs)
+z2 <- cbind(zs[,c(79)],zs[,b])
+names(z2)[1] <- "Total"
+# prop total reads
+# turn <5% to 0
+names(z2)
+z3 <- z2 %>%
+  mutate_at(vars(V1:V93), funs(ifelse(.<0.10,0,.)))
+View(z3)
+
+# Almost all are <10% except V1, 8, and 12
+# This affects 9 of 97 samples -- more than we'd want
+
+filter(tab3, cluster2 %in% c("V1","V8","V12"))
+
+# Checking out these samples in particular
+
+anomalies <- filter(z3, V1 > 0 | V8 >0 | V12 >0)
+
+filter(otus, Total %in% anomalies$Total)
+
+# To do  -- check out plate orientation to rule out any possibility of plating error
+
+
+# Now eles with same problem
+
+es <- filter(otus_df3, Species %in% c("Elephant"))
+head(es)
+tab3$cluster2
+# recombine by names() and cluster 2
+names(es) %in% tab3$cluster2
+# which cluster 2 ids correspond to coop?
+cooptab3 <- filter(tab3, genus_name=="Cooperia")
+cooptab3$cluster2
+cooptab3
+hist(cooptab3$best_identity)
+
+b <- cooptab3$cluster2[cooptab3$cluster2%in%names(es)]
+
+head(es)
+dim(es)
+e2 <- cbind(es[,c(79)],es[,b])
+names(e2)[1] <- "Total"
+# prop total reads
+# turn <5% to 0
+names(e2)
+e3 <- e2 %>%
+  mutate_at(vars(V1:V93), funs(ifelse(.<0.05,0,.)))
+View(e3)
+
+# All are less than 10%, so I'm not too worried about this
+# I can't see an immediate explanation for this from the plate plan, as it's spread over plates 1,3,4. There is another "plate_setup_final" spreadsheet that I'm not 100% sure of. Several samples are  color-coded, but I'm not sure why. Need to refer to lab notebook for clues. 
+
+
+hist(log(otus$V1+1))
+# It might be worth rarefying the OTUs??
+
+# First see if there is any evidence of coronocyclus -- this is only found in zeb
+checkzebs <- filter(otus_df3, Total %in% anomalies$Total)
+checkzebs
+tab3$cluster2
+
+coron <- filter(tab3, genus_name=="Coronocyclus")
+checkzebs[,which(names(checkzebs) %in% coron$cluster2[coron$cluster2 %in% names(otus_df3)])]
+
+
+
+head(otus_df3)
+# There's also evidence for coronocyclus, indicating that these are not mixed up samples, but potentially come from grass ingestion where there may be larvae..Unlikely to actually be infecting ... NEED TO FOLLOW UP WITH KAIA -- has she ever seen this? What are Johan's insights into how much we should rely on the genus ID? It's just so unlikely that anything in this genus would infect zebra.
+
+# Double check that the cluster names are correct!
+```
+
+In the meantime, I think the most appropriate course of action is to exclude these samples from analyses...
+How does this change the network diagram and NMDS plots?
+```{r} 
+# New diagrams
+
+
+
+
+
+```
+
+
+
+### Composition by species
+
+```{r}
+head(otus_mpala)
+# sum occurence then standardize
+
+spec_comp <- otus_mpala %>%
+  group_by(Species)%>%
+  summarize_at(vars(V1:V136), funs(sum))
+spec_comp$Total <- rowSums(spec_comp[,-1])
+spec_comp$Total
+
+spec_comp2 <- spec_comp %>% 
+  group_by(Species)%>%
+  mutate_at(vars(V1:V136), funs(./Total))
+
+spec_comp2
+
+spec_comp3 <- gather(spec_comp2, V1:V136, key=OTU, value=Proportion)
+
+ggplot(spec_comp3, aes(x=Species, y=Proportion))+
+  geom_bar(position="Stack", stat="identity", aes(fill=OTU))+
+  theme(axis.text.x=element_text(angle=45, hjust=1))+
+  scale_fill_discrete(guide=F)
+
+
+
+# rarefaction
+levels(otus_mpala$Species)
+otus_mpala$Species <- droplevels(otus_mpala$Species)
+
+for(i in 1:12){
+  (S <- specaccum(otus_mpala[otus_mpala$Species==levels(otus_mpala$Species)[i],6:57]))
+  S2 <- specaccum(otus_mpala[otus_mpala$Species==levels(otus_mpala$Species)[i],6:57],"random")
+  
+  plot(S, ci.type="poly", col="blue", lwd=2, ci.lty=0, ci.col="lightblue", main=paste(levels(otus_mpala$Species)[i]))
+  boxplot(S2, col="yellow", add=TRUE, pch="+")
+  mod1 <- fitspecaccum(S, "arrh")
+  coef(mod1)
+  fitted(mod1)
+  plot(S)
+  ## Add Lomolino model using argument 'add'
+  plot(mod1, add = TRUE, col=2, lwd=2)
+  ## Fit Arrhenius models to all random accumulations
+  mods <- fitspecaccum(S2, "arrh")
+  plot(mods, col="hotpink")
+  boxplot(S2, col = "yellow", border = "blue", lty=1, cex=0.3, add= TRUE)
+  ## Use nls() methods to the list of models
+  sapply(mods$models, AIC)
+}
+
+
+```

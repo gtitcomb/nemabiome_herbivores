@@ -1,0 +1,7 @@
+"0","# Divide by the number of reads per sample to get the relative read abundance
+rare_nem2_RRA <- rare_nem2 %>%
+  mutate_at(vars(V1:V329), funs(./1000))
+"
+"2","Error in UseMethod(""tbl_vars"") : 
+  no applicable method for 'tbl_vars' applied to an object of class ""c('matrix', 'integer', 'numeric')""
+"

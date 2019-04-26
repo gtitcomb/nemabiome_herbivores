@@ -1,0 +1,147 @@
+---
+title: "Nematode_Metabarcoding"
+author: "Georgia Titcomb"
+date: "April 25, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Import data
+
+```{r cars}
+otus <- read.csv("with_names.csv")
+
+tab3 <- read.table("OTU_log3.tab", header=T)
+dim(tab3)
+head(tab3[,1:10])
+
+# This is the other OTU table based on different filtering thresholds
+#tab35 <- read.table("OTU_log3.5.tab")
+#dim(tab35)
+```
+
+# 2. Read summary
+
+```{r}
+# average reads per sample
+summary(colSums(tab3[31:694]))
+
+par(mfrow=c(1,2))
+
+hist(colSums(tab3[31:694]), main="Distribution of reads per sample")
+hist(log(colSums(tab3[31:694])), main="Distribution of log(reads per sample)")
+min(colSums(tab3[31:694]))
+max(colSums(tab3[31:694]))
+
+```
+
+The mean number of reads per sample is a little over 15,000, but with a median over ~10,000. There are quite a lot of OTUs per sample, so we need to standardize and filter out very rare reads that are likely to be errors.
+
+# 3. Rarefaction and RRA
+
+The first step is to rarefy the data. The minimum number of reads per sample is 533 -- this seems quite low compared to Pansu et al (2018), and the histogram shows that samples more commonly are in the order of ~1000 reads.
+
+```{r}
+
+rare_nem2 <- rrarefy(t(tab3[,31:694]), 1000)
+length(which(colSums(tab3[31:694])<1000)) # only one sample affected
+
+rare_nem
+
+# Using GUniFrac
+library(GUniFrac)
+
+rare_nem <- Rarefy(t(tab3[,31:694]), depth=1000)
+rare_nem$discard
+dim(tab3)
+# These produce similar results (but not exactly the same)
+```
+
+
+The next step is to calculate the relative read abundance (RRA) - defined in Pansu 2018 as the proportional read abundance of a given OTU within each sample.
+
+```{r}
+
+rare_nem1 <- as.data.frame(rare_nem$otu.tab.rff)
+rare_nem2 <- as.data.frame(rare_nem2)
+
+# Divide by the number of reads per sample to get the relative read abundance
+rare_nem2_RRA <- rare_nem2 %>%
+  mutate_at(vars(V1:V329), funs(./1000))
+
+```
+
+Now create two datasets that filter out very low abundance reads (1% and 5%).
+
+```{r}
+
+rare_nem2_RRA_1pct <- rare_nem2_RRA %>%
+  mutate_at(vars(V1:V329), funs(ifelse(.>0.01,.,0)))
+rownames(rare_nem2_RRA_1pct) <- names(tab3)[31:694]
+# recombine
+rare_nem2_RRA_1pct <- cbind(tab3[,1:30],t(rare_nem2_RRA_1pct))
+# remove empty OTU rows
+rare_nem2_RRA_1pct <- rare_nem2_RRA_1pct[-which(rowSums(rare_nem2_RRA_1pct[,31:694])==0),]
+dim(rare_nem2_RRA_1pct)
+
+
+rare_nem2_RRA_5pct <- rare_nem2_RRA %>%
+  mutate_at(vars(V1:V329), funs(ifelse(.>0.05,.,0)))
+rownames(rare_nem2_RRA_5pct) <- names(tab3)[31:694]
+rare_nem2_RRA_5pct <- cbind(tab3[,1:30],t(rare_nem2_RRA_5pct))
+
+rare_nem2_RRA_5pct <- rare_nem2_RRA_5pct[-which(rowSums(rare_nem2_RRA_5pct[,31:694])==0),]
+dim(rare_nem2_RRA_5pct)
+
+```
+
+When the threshold is 1%, we get 97 OTUs for 664 samples. When it is 5%, we get 75 OTUs.
+
+
+# 3. Comparison to Matt's FECs
+
+```{r}
+# add metadata to RRA df
+
+FECs <- read.csv("FEC_comparison.csv")
+
+ggplot(FECs, aes(x=Reads, y=FEC))+
+  geom_point()
+
+```
+
+Raw data shows one point where we have reads but FEC is 0. However, this is before filtering. Recombining the dataset using the 5 percent cutoff threshold:
+
+```{r}
+
+FECs$sample2 <- paste("sample.",FECs$Sample, sep="")
+names(rare_nem2_RRA_5pct)[31:694] <- str_pad(names(rare_nem2_RRA_5pct)[31:694],3,pad="0")
+
+rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]
+# Assuming that the ones that are False are 0 reads
+
+b <- as.data.frame(colSums(rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]))
+b$sample2 <- rownames(b)
+names(b) <- c("RRAtot","sample2")
+
+joined_df <- join(FECs, b, by="sample2")
+
+joined_df <- joined_df %>%
+  mutate_at(vars(RRAtot), funs(ifelse(is.na(.)==T,0,.)))
+
+ggplot(joined_df, aes(x=FEC, y=RRAtot))+
+  geom_point(aes(color=log(Reads+1)), size=2)+
+  ggtitle("FECs vs Sequencing using 5% cutoff threshold")
+
+
+```
+
+We get a similar result, except it is notatble that the RRAtotal is lower than the rest, indicating a lot of low quality reads that got filtered  out.
+I'm not sure exactly what to do with this sample.
+
+## Species richness within sample
+
+
