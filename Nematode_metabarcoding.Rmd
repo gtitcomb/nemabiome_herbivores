@@ -7,6 +7,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(vegan)
+library(tidyverse)
+library(dplyr)
+library(gridExtra)
 ```
 
 # 1. Import data
@@ -16,8 +20,6 @@ otus <- read.csv("with_names.csv")
 
 tab3 <- read.table("OTU_log3.tab", header=T)
 dim(tab3)
-head(tab3[,1:10])
-
 # This is the other OTU table based on different filtering thresholds
 #tab35 <- read.table("OTU_log3.5.tab")
 #dim(tab35)
@@ -46,18 +48,9 @@ The first step is to rarefy the data. The minimum number of reads per sample is 
 
 ```{r}
 
-rare_nem2 <- rrarefy(t(tab3[,31:694]), 1000)
+rare_nem2 <- rrarefy(t(tab3[,31:694]), sample=533)
 length(which(colSums(tab3[31:694])<1000)) # only one sample affected
 
-rare_nem
-
-# Using GUniFrac
-library(GUniFrac)
-
-rare_nem <- Rarefy(t(tab3[,31:694]), depth=1000)
-rare_nem$discard
-dim(tab3)
-# These produce similar results (but not exactly the same)
 ```
 
 
@@ -65,12 +58,11 @@ The next step is to calculate the relative read abundance (RRA) - defined in Pan
 
 ```{r}
 
-rare_nem1 <- as.data.frame(rare_nem$otu.tab.rff)
 rare_nem2 <- as.data.frame(rare_nem2)
 
 # Divide by the number of reads per sample to get the relative read abundance
 rare_nem2_RRA <- rare_nem2 %>%
-  mutate_at(vars(V1:V329), funs(./1000))
+  mutate_at(vars(V1:V329), funs(./533))
 
 ```
 
@@ -98,7 +90,7 @@ dim(rare_nem2_RRA_5pct)
 
 ```
 
-When the threshold is 1%, we get 97 OTUs for 664 samples. When it is 5%, we get 75 OTUs.
+When the threshold is 1%, we get 101 OTUs for 664 samples. When it is 5%, we get 74 OTUs.
 
 
 # 3. Comparison to Matt's FECs
@@ -120,14 +112,14 @@ Raw data shows one point where we have reads but FEC is 0. However, this is befo
 FECs$sample2 <- paste("sample.",FECs$Sample, sep="")
 names(rare_nem2_RRA_5pct)[31:694] <- str_pad(names(rare_nem2_RRA_5pct)[31:694],3,pad="0")
 
-rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]
+#rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]
 # Assuming that the ones that are False are 0 reads
 
 b <- as.data.frame(colSums(rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]))
 b$sample2 <- rownames(b)
 names(b) <- c("RRAtot","sample2")
 
-joined_df <- join(FECs, b, by="sample2")
+joined_df <- left_join(FECs, b, by="sample2")
 
 joined_df <- joined_df %>%
   mutate_at(vars(RRAtot), funs(ifelse(is.na(.)==T,0,.)))
@@ -139,9 +131,109 @@ ggplot(joined_df, aes(x=FEC, y=RRAtot))+
 
 ```
 
-We get a similar result, except it is notatble that the RRAtotal is lower than the rest, indicating a lot of low quality reads that got filtered  out.
+We get a similar result, with one sample having reads and no FEC count. However, it is notatble that the RRAtotal is lower than the rest, indicating a lot of low quality reads that got filtered  out.
 I'm not sure exactly what to do with this sample.
 
-## Species richness within sample
+Using the 1% threshold:
+
+```{r}
+
+FECs$sample2 <- paste("sample.",FECs$Sample, sep="")
+names(rare_nem2_RRA_1pct)[31:694] <- str_pad(names(rare_nem2_RRA_1pct)[31:694],3,pad="0")
+
+#rare_nem2_RRA_5pct[,(which(names(rare_nem2_RRA_5pct) %in% FECs$sample2))]
+# Assuming that the ones that are False are 0 reads
+
+b <- as.data.frame(colSums(rare_nem2_RRA_1pct[,(which(names(rare_nem2_RRA_1pct) %in% FECs$sample2))]))
+b$sample2 <- rownames(b)
+names(b) <- c("RRAtot","sample2")
+
+joined_df <- left_join(FECs, b, by="sample2")
+
+joined_df <- joined_df %>%
+  mutate_at(vars(RRAtot), funs(ifelse(is.na(.)==T,0,.)))
+
+ggplot(joined_df, aes(x=FEC, y=RRAtot))+
+  geom_point(aes(color=log(Reads+1)), size=2)+
+  ggtitle("FECs vs Sequencing using 1% cutoff threshold")
+
+```
+
+## OTU results
+
+```{r}
+# looking at genus:
+p1 <- ggplot(rare_nem2_RRA_1pct, aes(x=reorder(family_name, -table(family_name)[family_name])))+
+  geom_bar(aes(fill=genus_name))+
+  theme(axis.text.x=element_text(angle=90, hjust=1))+
+  xlab("Family Name")+
+  ggtitle("1% threshold")
+
+# and 5%
+p2 <- ggplot(rare_nem2_RRA_5pct, aes(x=reorder(family_name, -table(family_name)[family_name])))+
+  geom_bar(aes(fill=genus_name))+
+  theme(axis.text.x=element_text(angle=90, hjust=1))+
+  xlab("Family Name")+
+  ggtitle("5% threshold")
+
+grid.arrange(p1, p2, ncol=2)
 
 
+```
+
+These are mostly similar; however we can see that there are more "none" IDs relative to other IDs when using the 1% cutoff threshold. Additionally, there are more Protostrongylidae records when 1% is used.
+
+# Results within species and locations
+
+Now we need to combine the RRA tables with the appropriate metadata.
+
+```{r}
+# I will do this using the species ID and names
+# transpose
+RRA_t_5 <- as.data.frame(t(rare_nem2_RRA_5pct[,31:694]))
+# remove "sample"
+RRA_t_5$sampleID <- sub("sample.",replacement="",x=rownames(RRA_t_5))
+
+# bring in metadata
+metadata <- read.csv("Sequenced_Samples_nem2018.csv")
+
+length(which(metadata$Sample %in% RRA_t_5$sampleID == F))
+length(which(metadata$Sample %in% RRA_t_5$sampleID == T))
+
+# edit sample names to make sure they match up
+RRA_t_5$sampleID2 <- sub("MRC_",replacement="", x=RRA_t_5$sampleID)
+RRA_t_5$sampleID2 <- sub("PNG_16", replacement="PNG16", x=RRA_t_5$sampleID2)
+RRA_t_5$sampleID2 <- sub("PNG_15", replacement="JAG15", x=RRA_t_5$sampleID2)
+
+RRA_t_5$sampleID2[which(RRA_t_5$sampleID2 %in% metadata$sampleID == F)]
+
+# rename so that joining column name matches
+names(metadata)[5] <- "sampleID2"
+
+RRA_5_join <- left_join(metadata, RRA_t_5)
+length(which(is.na(RRA_5_join$V1)))
+
+
+
+# Repeat this for the 1%
+# transpose
+RRA_t_1 <- as.data.frame(t(rare_nem2_RRA_1pct[,31:694]))
+# remove "sample"
+RRA_t_1$sampleID <- sub("sample.",replacement="",x=rownames(RRA_t_1))
+
+length(which(metadata$Sample %in% RRA_t_1$sampleID == F))
+length(which(metadata$Sample %in% RRA_t_1$sampleID == T))
+
+# edit sample names to make sure they match up
+RRA_t_1$sampleID2 <- sub("MRC_",replacement="", x=RRA_t_1$sampleID)
+RRA_t_1$sampleID2 <- sub("PNG_16", replacement="PNG16", x=RRA_t_1$sampleID2)
+RRA_t_1$sampleID2 <- sub("PNG_15", replacement="JAG15", x=RRA_t_1$sampleID2)
+
+RRA_t_1$sampleID2[which(RRA_t_1$sampleID2 %in% metadata$sampleID2 == F)]
+
+RRA_1_join <- left_join(metadata, RRA_t_1)
+
+length(which(is.na(RRA_1_join$V1)))
+
+
+```

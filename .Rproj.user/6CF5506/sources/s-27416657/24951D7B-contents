@@ -1,0 +1,1013 @@
+
+# Try to make the graph of deployments
+library(ggalt)
+
+head(cams)
+
+names(cams)[13] <- "SSID"
+cams$Location <- as.factor(cams$Location)
+cam2 <- filter(cams, Location %in% c("Jericho","Kambi"))
+cams$SSID <- as.integer(cams$SSID)
+cams4 <- filter(cams, is.na(SSID)==F)
+head(cam3)
+cams4$TrT_Loc <- paste(cams4$Location,cams4$Treatment, sep="_")
+cams4$TrT_Loc
+
+ggplot(cams4, aes(x=Start_Date, xend=End_Date, y=TrT_Loc))+
+    geom_dumbbell(aes(col=Treatment), size=2.3, size_x=4,size_xend=4)+
+  scale_color_manual(values=c("gray","deepskyblue2","darkolivegreen3"))+
+  theme_classic()
+
+######################################
+library(tidyjson)
+library(magrittr)
+library(jsonlite)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(lubridate)
+
+#This project has subquestions that vary by species, including a howmany and select-all behaviors
+jdata_unfiltered <- read.csv(file = "parasite-safari-classifications.csv", stringsAsFactors = F)
+
+# So, need to limit to final workflow version and ideally split by task. 
+jdata_unfiltered %>% mutate(., created_at = ymd_hms(created_at)) %>% 
+  group_by(., workflow_id, workflow_version) %>% summarise(., max(created_at), n()) %>% View
+
+jdata <- jdata_unfiltered
+
+############### SURVEY TASK
+head(jdata)
+dim(jdata)
+
+## subset
+jdata2 <- subset(jdata, workflow_version %in% c(1.10, 118.18, 120.19, 121.20, 123.21, 202.21, 326.22, 452.23))
+dim(jdata2)
+
+for (i in 1:61) {
+  jdata2$annotations[i] %>% prettify %>% print
+}
+
+# preliminary flat
+
+basic_flat_with_values <- jdata2 %>% 
+  dplyr::select(., subject_ids, classification_id, workflow_version, annotations) %>%
+  as.tbl_json(json.column = "annotations") %>%
+  gather_array(column.name = "task_index") %>% # really important for joining later
+  spread_values(task = jstring("task"), task_label = jstring("task_label"), value = jstring("value")) 
+
+View(basic_flat_with_values)
+
+basic_summary <-  basic_flat_with_values %>% 
+  gather_keys %>%
+  append_values_string()
+
+basic_summary %>% View # this will have all the classification IDs; if Value is empty, then the field will be null. This will have multiple rows per classification if there are multiple tasks completed
+
+basic_summary %>% data.frame %>% group_by(., workflow_version, key, task) %>% summarise(., n())
+
+# quick check the filtered original data
+jdata2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n_distinct(workflow_version))
+
+#--------------------------------------------------------------------------------#
+# split into survey vs. non-survey data frames. Question is flattened and can be exported as a separate file now.
+survey <- basic_flat_with_values 
+
+
+###----------------------------### SURVEY FLATTENING ###----------------------------### 
+
+# grab choices; append embedded array values just for tracking
+with_choices <- survey %>% enter_object("value") %>% json_lengths(column.name = "total_species")%>% 
+  gather_array(column.name = "species_index") %>% spread_values(choice = jstring("choice")) 
+
+
+
+# if there are multiple species ID'd, there will be multiple rows and array.index will be >1
+with_choices %>% View
+with_choices %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id))
+with_choices %>% group_by(., classification_id) %>% summarise(., count = n(), max(species_index)) %>% arrange(., -count)
+
+
+### FLATTEN WITH SUBQUESTIONS. NEED INPUT HERE.
+#Single Choice Qs
+count_string <- "HOWMANYTOTAL" 
+grazing <- "HOWMANYGRAZING"
+drinking <- "HOWMANYDRINKING"
+
+#Multi-Choice Qs
+#behavior_string <- "WHTBHVRSDS"
+
+
+
+# grab answers - for some reason, this keeps rows even if there are no answers! 
+# Note that this last bit is the part that would need to be customized per team, I think
+
+with_answers_list <- with_choices %>%  #annoyingly, there's no easy way to unlist these. hence the hoop jumping in the next block.
+  enter_object("answers") %>% 
+  spread_values(how_many = jstring(count_string), 
+                grazing = jstring(grazing), 
+                drinking = jstring(drinking)) #, 
+#behavior = jstring(behavior_string))
+
+
+with_answers <- with_choices %>% 
+  enter_object("answers") %>% 
+  spread_values(how_many = jstring(count_string), # Grab all the single answer questions
+                grazing = jstring(grazing), 
+                drinking = jstring(drinking)) 
+#behavior = jstring(behavior_string)) %>%
+#enter_object(behavior_string) %>% #enter into the list of behaviors
+#gather_array("behavior_index") %>% #gather into one behavior per row
+#append_values_string("behavior") 
+
+## I don't need this part because I don't have multi choice questions
+# spread answers (into separate columns): have to drop behavior index or else the rows won't combine!
+#with_answers_spread <- with_answers %>% data.frame %>% 
+#  select(., -behavior_index) %>%
+#  mutate(., behavior_present = 1) %>%
+#  spread(., key = behavior, value = behavior_present, fill = 0)
+
+# spread answers (into a list)
+#test <- with_answers %>% data.frame %>% 
+#  select(., -behavior_index) %>% nest(behavior)
+
+
+with_answers %>% View
+#with_answers_spread %>% View
+#From here on, the original code used with_answers_spread, but I replaced with with_answers
+with_answers %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id))
+
+# the number of rows where count >1 should be the same as the difference between the row count for add_counces and basic_flat
+with_answers %>% group_by(classification_id) %>% summarise(., count = n()) %>% arrange(., -count) %>% View   
+
+# in theory, you want to tie all of these back together just in case there are missing values
+add_choices <- left_join(survey, with_choices)
+tot <- left_join(add_choices, with_answers)
+flat_data <- tot %>% dplyr::select(., -task_index, -task_label, -value)
+
+#check that the number of distinct subject IDs and classification IDs is still the same
+flat_data %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n()) #flattened,
+jdata2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n()) #original
+
+View(flat_data)
+
+
+##################################################
+animals <- flat_data
+View(animals)
+# Use only the latest workflow
+levels(as.factor(animals$workflow_version))
+#animals1 <- subset(animals, workflow_version %in% c(1.1))
+animals1 <- animals
+
+count <- animals1$how_many
+drink <- animals1$drinking
+graze <- animals1$grazing
+
+# Replace the variable bits
+count[count == 1520] <- sample(15:20, 1)
+count[count == 2130] <- sample(21:30, 1)
+drink[drink == 1520] <- sample(15:20, 1)
+drink[drink == 2130] <- sample(21:30, 1)
+graze[graze == 1520] <- sample(15:20, 1)
+graze[graze == 2130] <- sample(21:30, 1)
+count[count == 1120] <- sample(11:20, 1)
+drink[drink == 1120] <- sample(11:20, 1)
+graze[graze == 1120] <- sample(11:20, 1)
+
+animals1 <- cbind(animals1, as.numeric(count), as.numeric(drink), as.numeric(graze))
+names(animals1)[11:13] <- c("count", "drink", "graze")
+head(animals1)
+
+# Unique subjects
+subs <- as.character(unique(animals1$subject_ids))
+str(animals1)
+hist(animals1$count)
+hist(animals1$drink)
+hist(animals1$graze)
+
+# Need to change some of the species
+animals1$choice <- as.factor(animals1$choice)
+levels(animals1$choice)[c(6,22,23,40,45,47,49,53)] <- c("RHINOBLACK", "GAZELLEGRANTS", "ZEBRAGREVYS", "ZEBRAPLAINS", "HYENASPOTTED", "HYENASTRIPED",
+                                                        "GAZELLETHOMSONS", "RHINOWHITE")
+
+# For each unique subject, I want a mini matrix of data
+# I then want to find the animals in the photo
+
+# Unique subjects
+subs <- as.character(unique(animals1$subject_ids))
+length(subs)
+
+# get rid of silly IDs
+dim(animals1)
+animals1 <- animals1[-which(animals1$classification_id %in% levels(as.factor(animals1[which(animals1$total_species>5),]$classification_id))),]
+
+
+# For loop for 28382 unique subjects takes more than 5 minutes and less than 20. For more than 50K, it took 25mins
+final <- data.frame()
+for (i in 1:length(subs)){
+  test <- subset(animals1, subject_ids == unique(animals1$subject_ids)[i])
+  
+  # What is the subject ID?
+  sub_id <- as.character(unique(test$subject_ids))
+  
+  # How many classifications were there?
+  classifications <- length(unique(test$classification_id))
+  
+  # How many unique species on average?
+  multspecies <- aggregate(test$total_species, by=list(test$classification_id), mean)
+  count_species <- mean(multspecies$x)
+  
+  # Which species?
+  specs <- unique(test$choice)
+  specs <- as.character(specs)
+  
+  # Now will loop through all the species for this subject to collect information on       how many times it was classified out of all possible:
+  
+  things <- c() # set up empty vector
+  
+  for (j in 1:length(specs)){
+    #species name
+    sp_name <- as.character(specs[j])
+    
+    #proportion classified:what proportion of classifications contained this species?
+    sp <- test[test$choice==specs[j],]
+    count_sp <- length(as.character(unique(sp$classification_id)))
+    prop_sp <- count_sp/classifications
+    drink_prop <- length(which(sp$drink>0))/classifications
+    graze_prop <- length(which(sp$graze>0))/classifications
+    
+    #count
+    mean_count <- mean(sp$count) #what was the average count for this animal?
+    median_count <- median(sp$count) #perhaps a better metric
+    sd_count <- sd(sp$count) #the standard deviation?
+    mad_count <- mad(sp$count) #mean absolute deviation
+    drinking <- mean(sp$drink) # drinking
+    grazing <- mean(sp$graze) # grazing
+    
+    together <- c(sp_name, prop_sp, drink_prop, graze_prop, mean_count, sd_count, median_count, mad_count, drinking, grazing)   #combine these metrics
+    things <- rbind(things, together[1:10]) #add to the other results in the for-loop
+  }
+  
+  things <- as.data.frame(things)
+  names(things) <- c("Species", "Proportion_Counted", "Drink_Prop", "Graze_Prop", "Mean_Count", "SD_Count", "Median_Count", "MAD_Count", "drink", "graze")
+  
+  things <- cbind(things, rep(count_species, length(things$Species)), rep(classifications, length(things$Species)), rep(sub_id, length(things$Species))) # Add in the other variables
+  names(things)[11:13] <- c("# Species", "# Classifications", "Subject_ID")
+  
+  final <- rbind(final, things)
+}
+
+View(final)
+str(final)
+# Is there a problem with my Num Species calculation?
+
+# Now need to clean to use proportions as a filter
+final$Proportion_Counted <- as.numeric(as.character(final$Proportion_Counted))
+final$Drink_Prop <- as.numeric(as.character(final$Drink_Prop))
+final$Graze_Prop <- as.numeric(as.character(final$Graze_Prop))
+
+final$fcount <- ifelse(final$Proportion_Counted>0.5,as.numeric(as.character(final$Mean_Count)),0)
+final$fdrink <- ifelse(final$Drink_Prop>0.5,as.numeric(as.character(final$drink)),0)
+final$fgraze <- ifelse(final$Graze_Prop>0.5,as.numeric(as.character(final$graze)),0)
+
+## Also need to get rid of more silly IDs
+hist(final[final$Species=="CHEETAH",]$fcount) # There definitely were not more than five at any time
+hist(final[final$Species=="LION",]$fcount) # There definitely were not more than five at any time
+
+final <- final[-which(final$Species %in% c("CHEETAH","LION", "HYENASTRIPED","HYENASPOTTED","LEOPARD","HONEYBADGER") & final$fcount >10),]
+
+
+### NEED TO ADD THE SUBJECT ID AS A COLUMN HERE
+###
+#write.csv(final, "classification_summary_Dec2018.csv")
+
+
+metadata <- read.csv("parasite-safari-subjects.csv")
+names(metadata)
+names(final)[13] <- "subject_id"
+names(final)[11] <- "Num_species"
+metadata$subject_id <- as.factor(metadata$subject_id)
+str(final)
+
+alldat <- full_join(final,metadata,by="subject_id")
+dim(alldat)
+head(alldat)
+
+#more <- read.csv("DeploymentInfo2.xlsx")
+more <- cams
+head(more)
+names(more)[13] <- "subject_set_id"
+alldat$subject_set_id <- as.character(alldat$subject_set_id)
+
+alldat2 <- full_join(alldat,more, by="subject_set_id")
+dim(alldat2)
+head(alldat2)
+levels(as.factor(alldat2[which(is.na(alldat2$Deployment_Name)),]$subject_set_id))
+# There are two deployments missing from my document, which I think I have now corrected
+View(alldat2[alldat2$subject_set_id=="18944",])
+
+names(alldat2)[c(31,32,33,34,35)] <- c("SD", "ED", "Initial_Images", "Images_Used", "Trap_Nights")
+
+#View(alldat2)
+# Get rid of rows with zero
+alldat3 <- alldat2[(alldat2$fcount+alldat2$fdrink+alldat2$fgraze)!=0,]
+
+#alldat4 <- filter(alldat3, Location %in% c("Jericho", "Kambi"))
+#summary(alldat3$Species) # These are just my IDs
+# which deployments are these?
+alldat4 <- filter(alldat3, is.na(Species)==F)
+relevant <- levels(as.factor(alldat4$subject_set_id))
+alldat5 <- filter(alldat3, subject_set_id %in% relevant)
+dim(alldat5)
+
+# Now the hard job of extracting the date and time
+testy <- alldat5$metadata[1]
+extract_TAD <- function(x){
+  str_split(x, "Date_Time", simplify=T)[2] %>%
+  str_replace(":", "")%>%
+  str_replace(pattern='"\"', "")%>%
+  str_replace('\"',"")%>%
+  substring(0,19)
+}
+length(alldat5$metadata)
+alldat5$TAD <- apply(as.data.frame(alldat5$metadata),1, FUN=extract_TAD)
+# This takes a min to run
+
+# convert to actual time and date - note, not all times and dates are in the same format! arg!
+alldat5$TAD <- str_replace_all(alldat5$TAD,":","-")
+alldat5$TAD <- as.POSIXct(alldat5$TAD, format = "%Y-%m-%d %H-%M-%OS")
+
+
+# calculate the proportion of each SS that have been IDed
+head(alldat5)
+View(alldat5)
+
+# This is only relevant for my workflow alone
+a <- aggregate(classifications_count ~ Deployment_Name, data=alldat5, FUN=sum)
+alldat5$Number_Subjects <- as.numeric(alldat5$Number_Subjects)
+#alldat5$Mean_Count <- as.numeric(alldat5$Mean_Count)
+b <- aggregate(Number_Subjects ~ Deployment_Name, data=alldat5, FUN=mean)
+c <- merge(a,b)
+c$prop <- c$classifications_count/c$Number_Subjects
+hist(c$prop)
+
+
+# I want to: take each species, look at the time and date, average the number if there is no break of 5 mins
+#reordering df
+alldat5 <- alldat5[order(alldat5$Deployment_Name, alldat5$TAD),]
+alldat5$delt <- c(0,diff(alldat5$TAD))
+alldat5$new <- ifelse(alldat5$delt>300,1,0)
+
+alldat6 <- alldat5[,c(45:47,1:16,27:29,35)]
+# need to remove 3 random records that don't have a time
+
+#alldat6 <- alldat6[-which(is.na(alldat6$new)),]
+alldat6$trigger <- rep(0,length(alldat6$TAD))
+for (i in 2:length(alldat6$TAD)){
+  alldat6$trigger[i] <- alldat6$trigger[i-1]+alldat6$new[i]
+}
+
+tail(alldat6)
+names(alldat6)[15] <- "NClassifications"
+
+alldat6$Deployment_Name <- as.factor(alldat6$Deployment_Name)
+levels(alldat6$Deployment_Name)
+#alldat6$drink <- as.numeric(alldat6$drink)
+#alldat6$graze <- as.numeric(alldat6$graze)
+
+# This calculates the mean of the number drinking and grazing within each trigger
+alldat7 <- alldat6 %>%
+  group_by(Deployment_Name, Species, trigger, Location, Treatment, Trap_Nights) %>%
+  summarize_at(vars(fcount, fdrink, fgraze, Num_species, TAD), funs(mean), na.rm=T)
+head(alldat7)
+
+elapsed <- alldat6 %>%
+  group_by(Deployment_Name, Species, trigger, Location, Treatment) %>%
+  summarize_at(vars(TAD), funs(min,max))
+elapsed$duration <- elapsed$max-elapsed$min
+elapsed$duration <- (as.numeric(elapsed$duration))
+
+alldat8 <- merge(alldat7,elapsed)
+
+#alldat8 <- left_join(alldat7,c) This applies with only my workflow
+View(alldat8)
+
+
+dim(alldat8)
+alldat8$Trap_Nights <- as.numeric(alldat8$Trap_Nights)
+
+alldat8$Day <- day(alldat8$TAD)
+alldat8$Month <- month(alldat8$TAD)
+alldat8$Year <- year(alldat8$TAD)
+
+alldat8[which(alldat8$Year==2014),]$Deployment_Name
+# I need to change the dates for these ones
+
+addtime <- function(hours,days,data){
+  new <- data + (hours*3600) + (days * 3600 * 24)
+  return(new)
+}
+
+alldat8[alldat8$Deployment_Name=="Jericho_C_Jun2018",11:13] <- addtime(14,1280, alldat8[alldat8$Deployment_Name=="Jericho_C_Jun2018",11:13])
+alldat8[alldat8$Deployment_Name=="Kambi_C_Nov2014",11:13] <- addtime(14,1728, alldat8[alldat8$Deployment_Name=="Kambi_C_Nov2014",11:13])
+alldat8[alldat8$Deployment_Name=="Kambi_E_ Nov2014",11:13] <- addtime(11,863, alldat8[alldat8$Deployment_Name=="Kambi_E_ Nov2014",11:13])
+# Now update and check
+alldat8$Day <- day(alldat8$TAD)
+alldat8$Month <- month(alldat8$TAD)
+alldat8$Year <- year(alldat8$TAD)
+alldat8[which(alldat8$Year==2014),]$Deployment_Name
+
+
+# give 1 seconds to those that are 0
+alldat8$duration <- ifelse(alldat8$duration==0,1,alldat8$duration)
+
+
+# Sum up the counts within a day 
+alldat9 <- alldat8 %>% 
+  group_by(Species, Deployment_Name, Month, Day, Year, Trap_Nights)%>%
+  summarize_at(vars(fcount, fdrink, fgraze, duration), funs(sum))
+
+# Are there more mixed species contacts?
+multi <- alldat8 %>% 
+  group_by(Species, Deployment_Name, Month, Day, Year, Trap_Nights)%>%
+  summarize_at(vars(Num_species), funs(mean))
+hist(multi$Num_species)
+multi[which.max(multi$Num_species),]
+head(multi)
+
+what <- alldat8 %>%
+  group_by(Deployment_Name, Month, Day, Year)
+what2 <- what[,c(1,2,4,5,7:9,15:17)]
+head(what2)
+what3 <- aggregate(fcount ~ Deployment_Name + Species + Location + Treatment + Day + Month + Year, data=what2, FUN=mean)
+dim(what3)
+what4 <- spread(what3, key=Species, value=fcount)
+
+what5 <- what4 %>%
+  mutate_at(vars(WARTHOG:HONEYBADGER), funs(replace(., is.na(.),0)))
+
+colSums(what5[,7:54])
+what5$SR <- vegan::specnumber(what5[,7:54])
+
+head(cams)
+what6 <- merge(what5, cams[,1:3])
+what6$Date <- as.Date(with(what6, paste(Day, Month, Year,sep="-")), "%d-%m-%Y")
+what6$EXPT <- ifelse(what6$Date < "2016-11-1", "A", ifelse(what6$Date > "2018-01-30","C", "B"))
+
+#write.csv(what6,"Present.csv")
+
+
+hist(what6$SR)
+sumstats <- summarySE(what6, "SR", groupvars=c("EXPT","Treatment"))
+SR_graze <- ggplot(sumstats, aes(x=EXPT, y=SR))+
+  geom_point(aes(col=Treatment))+
+  geom_errorbar(aes(ymin=SR-ci, ymax=SR+ci, col=Treatment))
+# I don't think this is a good idea because I integrated over time periods
+# alldat9$count2 <- alldat9$Mean_Count/alldat9$prop
+# alldat9$drink2 <- alldat9$drink/alldat9$prop
+# alldat9$graze2 <- alldat9$graze/alldat9$prop
+
+head(alldat9)
+head(cams)
+alldat10 <- merge(alldat9, cams[,1:3])
+alldat10$Date <- as.Date(with(alldat10, paste(Day, Month, Year,sep="-")), "%d-%m-%Y")
+
+# Weight counts by duration (units = animal*mins)
+alldat10$wcount <- alldat10$fcount*alldat10$duration/60
+alldat10$wdrink <- alldat10$fdrink*alldat10$duration/60
+alldat10$wgraze <- alldat10$fgraze*alldat10$duration/60
+
+
+# # Now calculate the mean animal-minutes per day within each month
+# alldat11 <- alldat10 %>%
+#   group_by(Species, Location, Treatment, Month, Year, Trap_Nights) %>%
+#   summarize_at(vars(wcount, wdrink, wgraze), funs(mean))
+alldat10$Date <- as.Date(with(alldat10, paste(1,Month, Year, sep="-")), "%d-%m-%Y")
+alldat10$EXPT <- ifelse(alldat10$Date < "2016-11-1", "A", ifelse(alldat10$Date > "2018-01-30","C", "B"))
+which(is.na(alldat10$EXPT))
+alldat10[which(is.na(alldat10$Treatment)),]
+
+# Do the same for the multi data
+multi2 <- merge(multi, cams[,1:3])
+multi2$Date <- as.Date(with(multi2, paste(Day, Month, Year, sep="-")), "%d-%m-%Y")
+multi2$EXPT <- ifelse(multi2$Date < "2016-11-01", "A", ifelse(multi2$Date > "2018-01-30","C", "B"))
+ggplot(multi2, aes(x=EXPT, y=Num_species))+
+  geom_boxplot(aes(col=Teatment))
+
+alldat10$lcount <- log(alldat10$wcount+1)
+alldat10$ldrink <- log(alldat10$wdrink+1)
+alldat10$lgraze <- log(alldat10$wgraze+1)
+
+# only major species
+#alldat11 <- filter(alldat10, Species %in% c("BUFFALO", "ELEPHANT", "GIRAFFE", "IMPALA", "ELAND", "WARTHOG", "RHINOBLACK", "CATTLE", "ZEBRAPLAINS"))
+library(ggplot2)
+
+ggplot(alldat10[alldat10$Species=="ZEBRAPLAINS",], aes(x=EXPT, y=fgraze))+
+  geom_boxplot(aes(color=Treatment))+
+  facet_wrap(~Species)
+
+library(Rmisc)
+summarySE(alldat10[alldat10$Species=="ELEPHANT",], "wdrink", groupvars = c("Species", "Treatment", "EXPT"))
+
+
+# Clean rainfall - It looks like species still put their heads in the pan...
+
+length(alldat10[which(alldat10$wdrink>1 & alldat10$Treatment == "CONT" & alldat10$EXPT == "C"),]$Deployment_Name)/
+  length(alldat10[which(alldat10$wdrink==0 & alldat10$Treatment == "CONT" & alldat10$EXPT == "C"),]$Deployment_Name)
+
+ggplot(alldat10, aes(x=EXPT, y=ldrink))+
+  geom_boxplot(aes(col=Treatment))
+
+head(alldat10)
+ggplot(alldat10, aes(x=EXPT, y=duration))+
+  geom_boxplot(aes(col=Treatment))+
+  facet_wrap(~Species)
+hist(alldat10$duration)
+which.max(alldat10$duration)
+alldat10[2043,]
+max(alldat10$duration)/60 # some zebras were there for a very long time
+
+#write.csv(alldat10,"PRELIMDATA.csv")
+
+
+
+
+# NMDS plots
+
+head(what6)
+colSums(what6[,7:54]!=0) # There are some species with hardly any observations
+# take those with at least 20
+what7 <- what6[,c(1:21,22:30,35,37,39,45,46,57)]
+what7 <- what7[-which(rowSums(what7[7:35])==0),]
+# now want to aggregate 
+head(what7)
+what8 <- aggregate(.~Location+Treatment+EXPT+Month+Year, data=what7, FUN=mean)
+head(what8)
+
+library(vegan)
+library(MASS)
+distmat <- vegdist(what8[,8:36])
+mdstest <- metaMDS(what8[,8:36], trymax=100, k=3)
+mdstest2 <- metaMDS(what8[,8:36], trymax=100, k=3, previous.best=mdstest)
+stressplot(mdstest2)
+plot(mdstest2)
+
+what8$groups <- paste0(what8$Treatment,what8$EXPT)
+fit <- envfit(mdstest2, what8[,c(2,3,37)], permutations=999, display="sites", na.rm=T)
+fit
+plot(mdstest2)
+ordiellipse(mdstest2,groups=what8[,2], label=T)
+
+# could stratify
+A <- metaMDS(what8[what8$EXPT=="A",8:36], trymax=100, k=3)
+fitA <- envfit(A, what8[what8$EXPT=="A",c(2:3)], permutations=999, na.rm=T)
+plot(A)
+ordiellipse(A,groups=what8[what8$EXPT=="A",2], label=T)
+
+B <- metaMDS(what8[what8$EXPT=="B",8:36], trymax=100, k=3)
+fitA <- envfit(B, what8[what8$EXPT=="B",c(2:3)], permutations=999, na.rm=T)
+plot(B)
+ordiellipse(B,groups=what8[what8$EXPT=="B",2], label=T)
+
+C <- metaMDS(what8[what8$EXPT=="B",8:36], trymax=100, k=3)
+fitC <- envfit(C, what8[what8$EXPT=="C",c(2:3)], permutations=999, na.rm=T)
+plot(C)
+ordiellipse(C,groups=what8[what8$EXPT=="C",2], label=T)
+
+
+
+
+alldat12 <- merge(alldat10,cams[,c(1:3,5,6)])
+ggplot(alldat10, aes(x=Date, y=Trap_Nights))+
+  geom_line(aes(col=Treatment))+
+  facet_wrap(~Location)
+
+alldat12$LT <- paste(alldat12$Location,alldat12$Treatment, sep="_")
+ggplot(alldat12, aes(x=Start_Date, xend=End_Date, y=LT))+
+  geom_dumbbell(aes(col=Treatment), size=1.2)+
+  scale_color_manual(values=c("gray","deepskyblue2","darkolivegreen3"))+
+  theme_bw()
+
+  facet_wrap(~Location)
+
+## Figures for presentation
+what6 <- read.csv("Present.csv")
+what7 <- what6[what6$EXPT!="C",]
+
+
+## ELEPHANTS
+ggplot(what7, aes(x=EXPT, y=ELEPHANT))+
+  geom_point(aes(col=Treatment), alpha=0.2, position=position_dodge(0.25))+
+  geom_point(data=ELS, aes(x=EXPT, y=ELEPHANT, col=Treatment), size=2)
+
+ELagg <- aggregate(ELEPHANT~Location+Treatment+Month+Year+EXPT, data=what7, FUN=mean)
+
+ggplot(ELagg, aes(x=EXPT, y=ELEPHANT))+
+  geom_point(aes(col=Treatment), alpha=0.2, position=position_dodge(0.25))+
+  geom_point(data=ELS, aes(x=EXPT, y=ELEPHANT, col=Treatment), size=2)
+
+ELS2 <- summarySE(ELagg, "ELEPHANT", groupvars=c("EXPT", "Treatment"))
+
+ggplot(ELagg, aes(x=Treatment, y=ELEPHANT))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_continuous(limits=c(0,4.2))+
+  geom_point(data=ELS2, aes(x=Treatment, y=ELEPHANT, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=ELS2, aes(x=Treatment, ymin=ELEPHANT-se, ymax=ELEPHANT+se, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Duration
+alldatUSE <- alldat10[alldat10$EXPT%in%c("A","B"),]
+eltime <- summarySE(alldatUSE[alldatUSE$Species=="ELEPHANT",], "duration", groupvars=c("EXPT","Treatment"))
+ggplot(alldatUSE[alldatUSE$Species=="ELEPHANT",], aes(x=Treatment, y=duration/60))+
+  geom_point(aes(col=EXPT), size=1.5, alpha=0.2, position=position_dodge(1))+
+  geom_point(data=eltime, aes(x=Treatment, y=duration/60, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=eltime, aes(x=Treatment, ymin=(duration-se)/60, ymax=(duration+se)/60, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  scale_y_log10()+
+  theme_classic(base_size=16)
+
+
+# wcount
+alldatUSE$rowID <- seq(1:length(alldatUSE$Deployment_Name))
+wcount_dat <- spread(alldatUSE, key=Species, value=wcount)
+
+wcount_dat2 <- wcount_dat %>%
+  mutate_at(vars(WARTHOG:HONEYBADGER), funs(replace(., is.na(.),0)))
+wcount_dat3 <- aggregate(.~Month+Day+Year+Location+Treatment+EXPT, data=wcount_dat2[,c(2:4,10:11,18,20:67)], FUN=sum)
+# now average by month
+wcount_dat4 <- aggregate(.~Month+Year+Location+Treatment+EXPT, data=wcount_dat3, FUN=mean)
+
+wAnim <- summarySE(wcount_dat4, "ELEPHANT", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wcount_dat4, aes(x=Treatment, y=ELEPHANT+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wAnim, aes(x=Treatment, y=ELEPHANT, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wAnim, aes(x=Treatment, ymin=(ELEPHANT-se), ymax=(ELEPHANT+se), col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+# wcount other species
+
+# Cattle
+wAnim <- summarySE(wcount_dat4, "CATTLE", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wcount_dat4, aes(x=Treatment, y=CATTLE+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wAnim, aes(x=Treatment, y=CATTLE, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wAnim, aes(x=Treatment, ymin=(CATTLE-se), ymax=(CATTLE+se), col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Buffalo
+wAnim <- summarySE(wcount_dat4, "BUFFALO", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wcount_dat4, aes(x=Treatment, y=BUFFALO+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wAnim, aes(x=Treatment, y=BUFFALO, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wAnim, aes(x=Treatment, ymin=(BUFFALO-se), ymax=(BUFFALO+se), col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Zebra
+# Buffalo
+wAnim <- summarySE(wcount_dat4, "ZEBRAPLAINS", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wcount_dat4, aes(x=Treatment, y=ZEBRAPLAINS+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wAnim, aes(x=Treatment, y=ZEBRAPLAINS, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wAnim, aes(x=Treatment, ymin=(ZEBRAPLAINS-se), ymax=(ZEBRAPLAINS+se), col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+# Impala
+wAnim <- summarySE(wcount_dat4, "IMPALA", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wcount_dat4, aes(x=Treatment, y=GIRAFFE+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wAnim, aes(x=Treatment, y=GIRAFFE, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wAnim, aes(x=Treatment, ymin=(GIRAFFE-se), ymax=(GIRAFFE+se), col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+
+### Drinking
+wdrink_dat <- spread(alldatUSE, key=Species, value=wdrink)
+
+wdrink_dat2 <- wdrink_dat %>%
+  mutate_at(vars(WARTHOG:HONEYBADGER), funs(replace(., is.na(.),0)))
+wdrink_dat3 <- aggregate(.~Month+Day+Year+Location+Treatment+EXPT, data=wdrink_dat2[,c(2:4,10:11,18,20:67)], FUN=sum)
+# now average by month
+wdrink_dat4 <- aggregate(.~Month+Year+Location+Treatment+EXPT, data=wdrink_dat3, FUN=mean)
+
+wdAnim <- summarySE(wdrink_dat4, "ELEPHANT", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wdrink_dat4, aes(x=Treatment, y=ELEPHANT+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wdAnim, aes(x=Treatment, y=ELEPHANT+0.001, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wdAnim, aes(x=Treatment, ymin=(ELEPHANT-se)+0.001, ymax=(ELEPHANT+se)+0.001, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Cattle
+wdAnim <- summarySE(wdrink_dat4, "CATTLE", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wdrink_dat4, aes(x=Treatment, y=CATTLE+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wdAnim, aes(x=Treatment, y=CATTLE+0.001, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wdAnim, aes(x=Treatment, ymin=(CATTLE-se)+0.001, ymax=(CATTLE+se)+0.001, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Zebra
+wdAnim <- summarySE(wdrink_dat4, "GIRAFFE", groupvars=c("Treatment", "EXPT"))
+# Units are animal-seconds per day averaged over a month
+
+ggplot(wdrink_dat4, aes(x=Treatment, y=GIRAFFE+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wdAnim, aes(x=Treatment, y=GIRAFFE+0.001, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wdAnim, aes(x=Treatment, ymin=(GIRAFFE-se)+0.001, ymax=(GIRAFFE+se)+0.001, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+# Grazing
+wdrink_dat <- spread(alldatUSE, key=Species, value=wgraze)
+
+wdrink_dat2 <- wdrink_dat %>%
+  mutate_at(vars(WARTHOG:HONEYBADGER), funs(replace(., is.na(.),0)))
+wdrink_dat3 <- aggregate(.~Month+Day+Year+Location+Treatment+EXPT, data=wdrink_dat2[,c(2:4,10:11,18,20:67)], FUN=sum)
+# now average by month
+wdrink_dat4 <- aggregate(.~Month+Year+Location+Treatment+EXPT, data=wdrink_dat3, FUN=mean)
+
+wdAnim <- summarySE(wdrink_dat4, "ZEBRAPLAINS", groupvars=c("Treatment", "EXPT"))
+ggplot(wdrink_dat4, aes(x=Treatment, y=ZEBRAPLAINS+0.001))+
+  geom_point(aes(col=EXPT), size=1.5,alpha=0.2, position=position_dodge(1))+
+  scale_y_log10()+
+  geom_point(data=wdAnim, aes(x=Treatment, y=ZEBRAPLAINS+0.001, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=wdAnim, aes(x=Treatment, ymin=(ZEBRAPLAINS-se)+0.001, ymax=(ZEBRAPLAINS+se)+0.001, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2","darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+head(alldat10)
+head(what7)
+
+whatagg <- aggregate(SR~Month+Year+Location+Treatment+EXPT, data=what7, FUN=mean)
+aggsummary <- summarySE(whatagg, "SR", groupvars=c("Treatment", "EXPT"))
+
+ggplot(whatagg, aes(x=Treatment, y=SR))+
+  geom_point(aes(col=EXPT), size=1.5, alpha=0.2, position=position_dodge(1))+
+  geom_point(data=aggsummary, aes(x=Treatment, y=SR, col=EXPT), size=4, position=position_dodge(1))+
+  geom_errorbar(data=aggsummary, aes(x=Treatment, ymin=SR-se, ymax=SR+se, col=EXPT), size=1.5, position=position_dodge(1))+
+  scale_color_manual(values=c("deepskyblue2", "darkolivegreen3"))+
+  theme_classic(base_size=16)
+
+
+
+
+# Validation
+# 10 random images
+
+bbb <- final[final$`# Classifications`>5,]
+testIDs <- bbb$subject_id[sample(c(1:10000),10)]
+alldat3[alldat3$subject_id%in%testIDs,]
+
+# another
+ccc <- final[final$Num_species>2,]
+testIDs <- ccc$subject_id[sample(c(1:3000),10)]
+alldat3[alldat3$subject_id%in%testIDs,]
+
+# now compare to my IDs...
+View(jdata_unfiltered)
+georgias <- jdata_unfiltered[jdata_unfiltered$user_name=="gtitcomb",]
+notgt <- jdata_unfiltered[jdata_unfiltered$user_name!="gtitcomb",]
+length(unique(notgt$subject_ids[notgt$subject_ids%in%georgias$subject_ids])) # 2483 subjects
+
+trialIDs <- unique(notgt$subject_ids[notgt$subject_ids%in%georgias$subject_ids])
+publicresults <- alldat3[alldat3$subject_id%in%trialIDs,c(1,2,3,4,5,6,9,10,11,12,13,14,15,16,22)]
+
+# now i have to extract just my data. Run the code at the bottom first!
+
+dim(flat_data2)
+dim(publicresults)
+names(publicresults)
+names(flat_data2)[c(1,7)] <- c("subject_id","Species")
+flat_data2$subject_id <- as.character(flat_data2$subject_id)
+flat_data2$Species <- as.factor(flat_data2$Species)
+flat_data2$Species[flat_data2$Species=="PLAINSZEBRA"] <- "ZEBRAPLAINS"
+flat_data2$Species[flat_data2$Species=="BLACKRHINO"] <- "RHINOBLACK"
+flat_data2$Species[flat_data2$Species=="THOMSONSGAZELLE"] <- "GAZELLETHOMSONS"
+
+# Ok, how many times did I miss what the public got?
+working <- left_join(publicresults,flat_data2, by=c("subject_id","Species"))
+# OK! Now, let's see how many missing values I have
+length(which(is.na(working$how_many)==T))
+length(unique(working$subject_id))
+26/2195
+
+# How many times did the public miss what I got?
+working2 <- left_join(flat_data2,publicresults, by=c("subject_id","Species"))
+length(which(is.na(working2$classifications_count)==T)) # That's a lot
+View(working2)
+working3 <- working2[working2$Species!="BIRDOTHER",]
+working3 <- working3[working3$Species!="NOTHINGHERE",]
+working3 <- working3[working3$Species!="VEHICLE",]
+working3 <- working3[working3$Species!="HUMAN",]
+
+length(which(is.na(working3$classifications_count)==T)) # That's a lot
+length(unique(working$subject_id))
+
+# OK! Now, let's see how many missing values I have
+length(which(is.na(working$how_many)==T))
+length(unique(working$subject_id))
+26/2195
+
+length(which(is.na(working3$how_many)==T))
+length(which(is.na(working2$Proportion_Counted)==T))
+length(unique(working3$subject_id))
+38/2313
+
+
+
+count <- working$how_many
+drink <- working$drinking
+graze <- working$grazing
+
+# Replace the variable bits
+count[count == 1520] <- sample(15:20, 1)
+count[count == 2130] <- sample(21:30, 1)
+drink[drink == 1520] <- sample(15:20, 1)
+drink[drink == 2130] <- sample(21:30, 1)
+graze[graze == 1520] <- sample(15:20, 1)
+graze[graze == 2130] <- sample(21:30, 1)
+count[count == 1120] <- sample(11:20, 1)
+drink[drink == 1120] <- sample(11:20, 1)
+graze[graze == 1120] <- sample(11:20, 1)
+
+new_work <- cbind(working, as.numeric(as.character(count)), as.numeric(as.character(drink)), as.numeric(as.character(graze)))
+names(new_work)[24:26] <- c("Count2","Drink2", "Graze2")
+new_work$Mean_Count <- as.numeric(as.character(new_work$Mean_Count))
+ggplot(new_work, aes(x=Mean_Count, y=Count2))+
+  geom_point(alpha=0.2)+
+  geom_smooth(col="blue", method="lm")+
+  geom_abline(size=1, col="red")+
+  scale_x_continuous(limits=c(0,15))+
+  scale_y_continuous(limits=c(0,15))+
+  theme_classic(base_size=16)+
+  xlab("Mean Public Count")+
+  ylab("Expert Count")
+# So, need to limit to final workflow version and ideally split by task. 
+
+new_work2 <- new_work[new_work$Mean_Count<15&new_work$Count2<15,]
+new_work2$deltac <- new_work2$Mean_Count-new_work2$Count2
+t.test(new_work2$deltac)
+
+
+############### SURVEY TASK
+dim(georgias)
+
+## subset
+georgia2 <- subset(georgias, subject_ids %in% trialIDs)
+dim(georgia2)
+
+for (i in 1:61) {
+  georgia2$annotations[i] %>% prettify %>% print
+}
+
+# preliminary flat
+
+basic_flat_with_values2 <- georgia2 %>% 
+  dplyr::select(., subject_ids, classification_id, workflow_version, annotations) %>%
+  as.tbl_json(json.column = "annotations") %>%
+  gather_array(column.name = "task_index") %>% # really important for joining later
+  spread_values(task = jstring("task"), task_label = jstring("task_label"), value = jstring("value")) 
+
+View(basic_flat_with_values2)
+
+basic_summary2 <-  basic_flat_with_values2 %>% 
+  gather_keys %>%
+  append_values_string()
+
+basic_summary2 %>% View # this will have all the classification IDs; if Value is empty, then the field will be null. This will have multiple rows per classification if there are multiple tasks completed
+
+basic_summary2 %>% data.frame %>% group_by(., workflow_version, key, task) %>% summarise(., n())
+
+# quick check the filtered original data
+georgia2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n_distinct(workflow_version))
+
+#--------------------------------------------------------------------------------#
+# split into survey vs. non-survey data frames. Question is flattened and can be exported as a separate file now.
+survey2 <- basic_flat_with_values2 
+
+
+###----------------------------### SURVEY FLATTENING ###----------------------------### 
+
+# grab choices; append embedded array values just for tracking
+with_choices2 <- survey2 %>% enter_object("value") %>% json_lengths(column.name = "total_species")%>% 
+  gather_array(column.name = "species_index") %>% spread_values(choice = jstring("choice")) 
+
+
+
+# if there are multiple species ID'd, there will be multiple rows and array.index will be >1
+with_choices %>% View
+with_choices2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id))
+with_choices2 %>% group_by(., classification_id) %>% summarise(., count = n(), max(species_index)) %>% arrange(., -count)
+
+
+### FLATTEN WITH SUBQUESTIONS. NEED INPUT HERE.
+#Single Choice Qs
+count_string <- "HOWMANYTOTAL" 
+grazing <- "HOWMANYGRAZING"
+drinking <- "HOWMANYDRINKING"
+
+#Multi-Choice Qs
+#behavior_string <- "WHTBHVRSDS"
+
+
+
+# grab answers - for some reason, this keeps rows even if there are no answers! 
+# Note that this last bit is the part that would need to be customized per team, I think
+
+with_answers_list2 <- with_choices2 %>%  #annoyingly, there's no easy way to unlist these. hence the hoop jumping in the next block.
+  enter_object("answers") %>% 
+  spread_values(how_many = jstring(count_string), 
+                grazing = jstring(grazing), 
+                drinking = jstring(drinking)) #, 
+#behavior = jstring(behavior_string))
+
+
+with_answers2 <- with_choices2 %>% 
+  enter_object("answers") %>% 
+  spread_values(how_many = jstring(count_string), # Grab all the single answer questions
+                grazing = jstring(grazing), 
+                drinking = jstring(drinking)) 
+#behavior = jstring(behavior_string)) %>%
+#enter_object(behavior_string) %>% #enter into the list of behaviors
+#gather_array("behavior_index") %>% #gather into one behavior per row
+#append_values_string("behavior") 
+
+## I don't need this part because I don't have multi choice questions
+# spread answers (into separate columns): have to drop behavior index or else the rows won't combine!
+#with_answers_spread <- with_answers %>% data.frame %>% 
+#  select(., -behavior_index) %>%
+#  mutate(., behavior_present = 1) %>%
+#  spread(., key = behavior, value = behavior_present, fill = 0)
+
+# spread answers (into a list)
+#test <- with_answers %>% data.frame %>% 
+#  select(., -behavior_index) %>% nest(behavior)
+
+
+with_answers2 %>% View
+#with_answers_spread %>% View
+#From here on, the original code used with_answers_spread, but I replaced with with_answers
+with_answers2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id))
+
+# the number of rows where count >1 should be the same as the difference between the row count for add_counces and basic_flat
+with_answers2 %>% group_by(classification_id) %>% summarise(., count = n()) %>% arrange(., -count) %>% View   
+
+# in theory, you want to tie all of these back together just in case there are missing values
+add_choices2 <- left_join(survey2, with_choices2)
+tot2 <- left_join(add_choices2, with_answers2)
+flat_data2 <- tot2 %>% dplyr::select(., -task_index, -task_label, -value)
+
+#check that the number of distinct subject IDs and classification IDs is still the same
+flat_data2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n()) #flattened,
+jdata2 %>% summarise(., n_distinct(subject_ids), n_distinct(classification_id), n()) #original
+
+View(flat_data2)
+
+
+
+names(cs) <- as.character(cs[1,])
+cs2 <- cs[-(1:2),]
+names(cs2) <- c("Year", "Number", "Proportion")
+cs2$Year <- as.numeric(as.character(cs2$Year))
+cs2$Number <- as.numeric(as.character(cs2$Number))
+ggplot(cs2, aes(x=Year, y=Number, color=cs2$Number))+
+  geom_line(size=2)+
+  geom_point(size=3)+
+  scale_color_gradient(low="gray", high="violetred3")+
+  theme_classic(base_size=16)

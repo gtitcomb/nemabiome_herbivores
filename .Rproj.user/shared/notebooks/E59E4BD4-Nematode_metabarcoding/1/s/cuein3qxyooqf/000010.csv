@@ -1,12 +1,23 @@
-"0","rare_nem2_RRA_5pct <- rare_nem2_RRA %>%
-  mutate_at(vars(V1:V329), funs(ifelse(.>0.05,.,0)))
-rownames(rare_nem2_RRA_5pct) <- names(tab3)[31:694]
-rare_nem2_RRA_5pct <- cbind(tab3[,1:30],t(rare_nem2_RRA_5pct))
-rare_nem2_RRA_5pct <- rare_nem2_RRA_5pct[-which(rowSums(rare_nem2_RRA_5pct[,31:694])==0),]
-dim(rare_nem2_RRA_5pct)
+"0","rare_nem2_RRA_1pct <- rare_nem2_RRA %>%
+  mutate_at(vars(V1:V329), funs(ifelse(.>0.01,.,0)))
+rownames(rare_nem2_RRA_1pct) <- names(tab3)[31:694]
+# recombine
+rare_nem2_RRA_1pct <- cbind(tab3[,1:30],t(rare_nem2_RRA_1pct))
+# remove empty OTU rows
+rare_nem2_RRA_1pct <- rare_nem2_RRA_1pct[-which(rowSums(rare_nem2_RRA_1pct[,31:694])==0),]
+dim(rare_nem2_RRA_1pct)
 "
 "1","[1]"
-"1","  75"
+"1"," 101"
+"1"," 694"
+"1","
+"
+"0","rare_nem2_RRA_5pct <- rare_nem2_RRA %>%"
+"0","  mutate_at(vars(V1:V329), funs(ifelse(.>0.05,.,0)))"
+"0","rare_nem2_RRA_5pct <- rare_nem2_RRA_5pct[-which(rowSums(rare_nem2_RRA_5pct[,31:694])==0),]"
+"0","dim(rare_nem2_RRA_5pct)"
+"1","[1]"
+"1","  74"
 "1"," 694"
 "1","
 "

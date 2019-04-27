@@ -1,0 +1,1 @@
+"0","hist(log(colSums(tab3[31:694])), main=""Distribution of log(reads per sample)"")"
