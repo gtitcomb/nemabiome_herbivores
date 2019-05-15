@@ -90,7 +90,7 @@ dim(rare_nem2_RRA_5pct)
 
 ```
 
-When the threshold is 1%, we get 101 OTUs for 664 samples. When it is 5%, we get 74 OTUs.
+When the threshold is 1%, we get 99 OTUs for 664 samples. When it is 5%, we get 73 OTUs.
 
 
 # 3. Comparison to Matt's FECs
@@ -205,7 +205,7 @@ RRA_t_5$sampleID2 <- sub("MRC_",replacement="", x=RRA_t_5$sampleID)
 RRA_t_5$sampleID2 <- sub("PNG_16", replacement="PNG16", x=RRA_t_5$sampleID2)
 RRA_t_5$sampleID2 <- sub("PNG_15", replacement="JAG15", x=RRA_t_5$sampleID2)
 
-RRA_t_5$sampleID2[which(RRA_t_5$sampleID2 %in% metadata$sampleID == F)]
+#RRA_t_5$sampleID2[which(RRA_t_5$sampleID2 %in% metadata$sampleID == F)]
 
 # rename so that joining column name matches
 names(metadata)[5] <- "sampleID2"
@@ -229,11 +229,251 @@ RRA_t_1$sampleID2 <- sub("MRC_",replacement="", x=RRA_t_1$sampleID)
 RRA_t_1$sampleID2 <- sub("PNG_16", replacement="PNG16", x=RRA_t_1$sampleID2)
 RRA_t_1$sampleID2 <- sub("PNG_15", replacement="JAG15", x=RRA_t_1$sampleID2)
 
-RRA_t_1$sampleID2[which(RRA_t_1$sampleID2 %in% metadata$sampleID2 == F)]
+#RRA_t_1$sampleID2[which(RRA_t_1$sampleID2 %in% metadata$sampleID2 == F)]
 
 RRA_1_join <- left_join(metadata, RRA_t_1)
 
 length(which(is.na(RRA_1_join$V1)))
+
+
+```
+
+Check out the new data:
+```{r}
+head(RRA_5_join)
+RRA_5_join %>% 
+  group_by(Species) %>% 
+  ggplot(aes(x=Species, y=V1)) + geom_point() + geom_boxplot(alpha=0.2) + theme(axis.text.x=element_text(angle=90, hjust=1)) + ggtitle("OTU 1 RRA by host species (5%)")
+
+RRA_1_join %>% 
+  group_by(Species) %>% 
+  ggplot(aes(x=Species, y=V1)) + geom_point() + geom_boxplot(alpha=0.2) + theme(axis.text.x=element_text(angle=90, hjust=1)) + ggtitle("OTU 1 RRA by host species (1%)")
+```
+
+I will now create a matrix with average RRA by species
+
+```{r}
+samp_mat_1 <- RRA_1_join %>% group_by(Species) %>% summarize_at(vars(V1:V302), funs(mean(., na.rm=T)))
+
+samp_mat_1 <- samp_mat_1[-which(samp_mat_1$Species %in% c("Primer", "POS", "NEG")),]
+levelplot(as.matrix(samp_mat_1[,-1]),  col.regions = gray(0:100/100))
+
+# need to put all in one column
+mat_1_long <- gather(samp_mat_1, key=OTU, value=RRA, -Species)
+
+# remove zeros
+mat_1_long <- mat_1_long[-which(mat_1_long$RRA == 0),]
+
+library(igraph)
+g <- graph.data.frame(mat_1_long, directed=FALSE)
+
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-1.3
+
+  
+plot(g, vertex.label.cex = 0.8, vertex.label.color = "black")
+plot(g, layout=layout.bipartite, vertex.size=2, vertex.label.cex=0.8)
+```
+
+Now doing the same for the 5% cutoff
+
+```{r}
+
+samp_mat_5 <- RRA_5_join %>% group_by(Species) %>% summarize_at(vars(V1:V267), funs(mean(., na.rm=T)))
+
+samp_mat_5 <- samp_mat_5[-which(samp_mat_5$Species %in% c("Primer", "POS", "NEG")),]
+levelplot(as.matrix(samp_mat_5[,-1]),  col.regions = gray(0:100/100))
+
+# need to put all in one column
+mat_5_long <- gather(samp_mat_5, key=OTU, value=RRA, -Species)
+
+# remove zeros
+mat_5_long <- mat_5_long[-which(mat_5_long$RRA == 0),]
+
+g2 <- graph.data.frame(mat_5_long, directed=FALSE)
+
+V(g2)$type <- bipartite_mapping(g2)$type 
+V(g2)$color <- ifelse(V(g2)$type, "lightblue", "salmon")
+V(g2)$shape <- ifelse(V(g2)$type, "square", "circle")
+E(g2)$color <- "lightgray"
+V(g2)$frame.color <-  "white"
+V(g2)$label.dist <-1.3
+
+  
+plot(g2, vertex.label.cex = 0.8, vertex.label.color = "black")
+plot(g2, layout=layout.bipartite, vertex.size=2, vertex.label.cex=0.8)
+```
+
+### Following the igraph tutorial on network analysis, option 1: regarding as one mode
+
+```{r}
+### 1% dataset
+types <- V(g)$type                 ## getting each vertex `type` let's us sort easily
+deg <- degree(g)
+bet <- betweenness(g)
+clos <- closeness(g)
+eig <- eigen_centrality(g)$vector
+
+cent_df <- data.frame(types, deg, bet, clos, eig)
+
+cent_df[order(cent_df$type, decreasing = TRUE),] ## sort w/ `order` by `type`
+
+V(g)$size <- degree(g) *0.2
+V(g)$label.cex <- degree(g) * 0.01
+
+plot(g, layout = layout_with_graphopt)
+
+
+### 5% dataset
+types <- V(g2)$type                 ## getting each vertex `type` let's us sort easily
+deg <- degree(g2)
+bet <- betweenness(g2)
+clos <- closeness(g2)
+eig <- eigen_centrality(g2)$vector
+
+cent_df2 <- data.frame(types, deg, bet, clos, eig)
+
+cent_df2[order(cent_df2$type, decreasing = TRUE),] ## sort w/ `order` by `type`
+
+V(g2)$size <- degree(g2)*0.5
+V(g2)$label.cex <- degree(g2) * 0.02
+
+plot(g2, layout = layout_with_graphopt)
+
+just_animals_5 <- cent_df2[which(row.names(cent_df2) %in% c("Buffalo","Bushbuck","Camel","Cow","Dik-dik","Eland","Elephant","Giraffe","Grants Gazelle","Grevys zebra","Hartebeest","Hippo","Hybrid zebra","Impala","Kudu","Oryx","Plains zebra","Waterbuck","Warthog","Donkey")),]
+
+just_animals_5$Species <- row.names(just_animals_5)
+# what is the sample size for each species?
+count <- RRA_5_join %>% group_by(Species) %>% summarize_at(vars(V1), funs(n()))
+names(count)[2] <- "count"
+just_animals_5 <- left_join(just_animals_5,count)
+just_animals_5
+car::scatterplotMatrix(just_animals_5[,c(2:5,7)])
+
+# Now need to account for unequal sample sizes....
+```
+
+### Option 2: analyzing separately
+
+```{r}
+library(tnet)
+tm<-get.edgelist(g, names=FALSE)
+
+head(tm)  # check to make sure it worked
+NodeLabels <- V(g)$name
+
+head(NodeLabels)   # Again, check
+
+mt <- tm[, c(2, 1)]
+
+head(mt) 
+
+deg_tm <- degree_tm(tm)
+
+deg_mt <- degree_tm(mt)
+
+deg_tm
+deg_mt
+
+# I don't really understand this method
+```
+
+### Option 3: convert 2 mode to 1 mode
+
+```{r}
+
+bipartite_matrix <- as_incidence_matrix(g)
+event_matrix_prod <- t(bipartite_matrix) %*% bipartite_matrix 
+## crossprod() does same and scales better, but this is better to learn at first at first so you understand the method
+diag(event_matrix_prod) <- 0
+event_matrix_prod
+person_matrix_prod <- bipartite_matrix %*% t(bipartite_matrix)
+diag(person_matrix_prod) <- 0
+person_matrix_prod
+women_overlap <- graph_from_adjacency_matrix(person_matrix_prod, 
+                                        mode = "undirected", 
+                                        weighted = TRUE)
+
+women_overlap
+
+events_overlap <- graph_from_adjacency_matrix(event_matrix_prod, 
+                                       mode = "undirected", 
+                                       weighted = TRUE)
+
+events_overlap
+
+E(women_overlap)$weight
+E(events_overlap)$weight
+```
+
+### Simple matching
+
+```{r}
+library(ade4)
+
+bipartite_matrix <- as_incidence_matrix(g)  # Extract the matrix
+
+women_match <- dist.binary(bipartite_matrix, method=2, upper=TRUE, diag = FALSE) # Method #2 is "simple matching"
+event_match <- dist.binary(t(bipartite_matrix), method=2, upper=TRUE, diag = FALSE) # Method #2 is "simple matching"
+
+women_match <- as.matrix(women_match)
+matching_women <- ifelse(women_match>0.6, 1, 0)
+matching_women
+
+match_women <- graph_from_adjacency_matrix(matching_women, 
+                                        mode = "undirected")
+plot(match_women)
+
+```
+
+### Jaccard similarity
+
+```{r}
+
+bipartite_matrix <- as_incidence_matrix(g)  # Extract the matrix
+
+women_jaccard <- dist.binary(bipartite_matrix, method=1, upper=TRUE, diag = FALSE) # Method #1 is "Jaccard Index"
+event_jaccard <- dist.binary(t(bipartite_matrix), method=1, upper=TRUE, diag = FALSE) 
+
+women_jaccard <- as.matrix(women_jaccard)   
+diag(women_jaccard)<-0
+
+#women_jaccard          # Look at the matrix before you binarize
+jaccard_women <- ifelse(women_jaccard>0.90, 1, 0)     # Binarize
+
+# jaccard_women      # Take a look at the matrix if you like.
+
+jacc_women <- graph_from_adjacency_matrix(jaccard_women,    # Create an igraph network
+                                        mode = "undirected")
+plot(jacc_women)
+
+
+
+```
+
+### Pearson's correlation
+
+```{r}
+bipartite_matrix <- as_incidence_matrix(g)  # Extract the matrix
+
+women_correl <- cor(t(bipartite_matrix))
+event_correl <- cor(bipartite_matrix)
+
+women_correl <- as.matrix(women_correl)   
+# women_correl          # Look at the matrix before you binarize
+correl_women <- ifelse(women_correl>0.5, 1, 0)    # Binarize 
+diag(correl_women)<-0
+# correl_women    # Take a look at the matrix if you like
+
+
+corr_women <- graph_from_adjacency_matrix(correl_women,     # Create an igraph network
+                                        mode = "undirected")
+plot(corr_women)
+
 
 
 ```
