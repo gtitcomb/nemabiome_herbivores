@@ -157,6 +157,8 @@ ggplot(joined_df, aes(x=FEC, y=RRAtot))+
   geom_point(aes(color=log(Reads+1)), size=2)+
   ggtitle("FECs vs Sequencing using 1% cutoff threshold")
 
+dim(joined_df)
+
 ```
 
 ## OTU results
@@ -250,7 +252,7 @@ RRA_1_join %>%
   ggplot(aes(x=Species, y=V1)) + geom_point() + geom_boxplot(alpha=0.2) + theme(axis.text.x=element_text(angle=90, hjust=1)) + ggtitle("OTU 1 RRA by host species (1%)")
 ```
 
-I will now create a matrix with average RRA by species
+Now some network graphs
 
 ```{r}
 samp_mat_1 <- RRA_1_join %>% group_by(Species) %>% summarize_at(vars(V1:V302), funs(mean(., na.rm=T)))
@@ -263,6 +265,15 @@ mat_1_long <- gather(samp_mat_1, key=OTU, value=RRA, -Species)
 
 # remove zeros
 mat_1_long <- mat_1_long[-which(mat_1_long$RRA == 0),]
+
+
+# now do this for individuals
+imat_1_long <- gather(RRA_1_join[,11:111], key=OTU, value=RRA, -Species)
+imat_1_long <- imat_1_long[-which(imat_1_long$Species %in% c("Primer", "POS", "NEG"))]
+imat_1_long <- imat_1_long[-which(imat_1_long$RRA == 0),]
+imat_1_long <- imat_1_long[-which(is.na(imat_1_long$RRA)),]
+dim(imat_1_long)
+imat_1_long
 
 library(igraph)
 g <- graph.data.frame(mat_1_long, directed=FALSE)
@@ -277,6 +288,36 @@ V(g)$label.dist <-1.3
   
 plot(g, vertex.label.cex = 0.8, vertex.label.color = "black")
 plot(g, layout=layout.bipartite, vertex.size=2, vertex.label.cex=0.8)
+
+### Individual
+
+g <- graph.data.frame(imat_1_long, directed=FALSE)
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-1.3
+
+  
+plot(g, vertex.label.cex = 0.8, vertex.label.color = "black")
+plot(g, layout=layout.bipartite, vertex.size=2, vertex.label.cex=0.8)
+
+
+library(bipartite)
+tsamp_mat_1 <- as.data.frame(t(samp_mat_1[,-1]))
+dim(tsamp_mat_1)
+names(tsamp_mat_1) <- samp_mat_1$Species
+plotweb(tsamp_mat_1, high.spacing=NULL, col.interaction=rep(1:20),bor.col.interaction=rep(1:20), col.high=rep(1:20), high.lablength=3)
+#plotweb(RRA_1_join[,12:111])
+
+#visualized the other way
+row.names(samp_mat_1)
+row.names(samp_mat_1b) <- samp_mat_1$Species
+samp_mat_1b <- as.data.frame(samp_mat_1[,-1])
+row.names(samp_mat_1b) <- samp_mat_1$Species
+plotweb(samp_mat_1b)
+
 ```
 
 Now doing the same for the 5% cutoff
@@ -299,10 +340,18 @@ g2 <- graph.data.frame(mat_5_long, directed=FALSE)
 V(g2)$type <- bipartite_mapping(g2)$type 
 V(g2)$color <- ifelse(V(g2)$type, "lightblue", "salmon")
 V(g2)$shape <- ifelse(V(g2)$type, "square", "circle")
-E(g2)$color <- "lightgray"
 V(g2)$frame.color <-  "white"
 V(g2)$label.dist <-1.3
+length(V(g2)$name)
+length(E(g2))
+(E(g2)[[1:286]])
 
+deets <- read.delim("D:/Dropbox/Projects/Watering Holes/Data_all/Genetics/Analysis2/Rwork_nems/nem_data/edge_details_5.txt", header=FALSE)
+names(deets) <- c("rowID","Species","head","tid", "hid", "RRA", "color")
+head(deets)
+
+E(g2)$color <- as.factor(deets$Species)
+V(g2)$color <- as.factor(V(g2)$name)
   
 plot(g2, vertex.label.cex = 0.8, vertex.label.color = "black")
 plot(g2, layout=layout.bipartite, vertex.size=2, vertex.label.cex=0.8)
@@ -475,5 +524,53 @@ corr_women <- graph_from_adjacency_matrix(correl_women,     # Create an igraph n
 plot(corr_women)
 
 
+
+```
+
+
+
+### Phylogenetic signal
+
+
+```{r}
+library(phylosignal)
+library(adephylo)
+library(ape)
+library(phylobase)
+data(carni19)
+
+carni19$bm
+carni19$tre
+tre <- read.tree(text=carni19$tre)
+dat <- list()
+dat$mass <- carni19$bm
+dat$random <- rnorm(19, sd = 10)
+dat$bm <- rTraitCont(tre)
+dat <- as.data.frame(dat)
+
+p4d <- phylo4d(tre, dat)
+barplot.phylo4d(p4d, tree.type = "phylo", tree.ladderize = TRUE)
+
+
+tree <- read.tree("mammaltree.txt")
+plot(tree)
+
+# Then each trait could be mean RRA for each species
+head(samp_mat_1)
+samp_mat_1$SciName <- c("Syncerus_caffer","Tragelaphus_scriptus","Camelus_dromedarius","Bos_taurus","Madoqua_kirkii", "Equus_asinus", "Taurotragus_oryx", "Loxodonta_africana", "Giraffa_camelopardalis", "Gazella_granti", "Equus_grevyi", "Alcelaphus_buselaphus", "Hybrid", "Hippopotamus_amphibius", "Aepyceros_melampus", "Tragelaphus_strepsiceros", "Oryx_gazella", "Equus_buchelli", "Phacochoerus_africanus", "Kobus_ellipsiprymnus")
+
+samp_mat_1c <- samp_mat_1[-which(samp_mat_1$Species == "Hybrid zebra"),]
+dim(samp_mat_1c)
+mamms <- samp_mat_1c[,c(101,2:10)]
+
+p4d2 <- phylo4d(tree, mamms)
+
+tree2 <- collapse.singles(tree)
+plot(tree2)
+p4d2 <- phylo4d(tree2, mamms)
+
+
+barplot.phylo4d(p4d, tree.type = "phylo", tree.ladderize = TRUE)
+barplot.phylo4d(p4d2[,-1], tree.type="phylo", tree.ladderize=TRUE)
 
 ```
