@@ -1,0 +1,19 @@
+Species,MSW93_Order,MSW93_Family,MSW93_Genus,MSW93_Species,MSW93_Binomial,5-1_AdultBodyMass_g,Body_Mass_kg,HomeRange_km2,SocialGrpSize,Diet
+Giraffe,Artiodactyla,Giraffidae,Giraffa,camelopardalis,Giraffa_camelopardalis,955000,955,82.5,15,B
+Plains zebra,Perissodactyla,Equidae,Equus,burchellii,Equus_burchellii,277000,277,128,10,G
+Grevys zebra,Perissodactyla,Equidae,Equus,grevyi,Equus_grevyi,403000,403,6,4,G
+Donkey,Perissodactyla,Equidae,Equus,asinus,Equus_asinus,180000,180,142,4.7,G
+DikDik,Artiodactyla,Bovidae,Madoqua,kirkii,Madoqua_kirkii,4770,4.77,0.2,2.5,B
+Impala,Artiodactyla,Bovidae,Aepyceros,melampus,Aepyceros_melampus,52300,52.3,1.99,15.25,M
+Grants gazelle,Artiodactyla,Bovidae,Gazella,granti,Gazella_granti,55000,55,290,20,M
+Oryx,Artiodactyla,Bovidae,Oryx,gazella,Oryx_gazella,186000,186,19,20,G
+Cattle,Artiodactyla,Bovidae,Bos,taurus,Bos_taurus,613000,613,10.2,120,G
+Buffalo,Artiodactyla,Bovidae,Syncerus,caffer,Syncerus_caffer,593000,593,63.8,12,G
+Elephant,Proboscidea,Elephantidae,Loxodonta,africana,Loxodonta_africana,3940000,3940,594,3.4,M
+Camel,Artiodactyla,Camelidae,Camelus,dromedarius,Camelus_dromedarius,488000,488,200,10,B
+Hippo,Artiodactyla,Hippopotamidae,Hippopotamus,amphibius,Hippopotamus_amphibius,1520000,1520,8,20,G
+Eland,Artiodactyla,Bovidae,Taurotragus,oryx,Taurotragus_oryx,561000,561,197,20,M
+Warthog,Artiodactyla,Suidae,Phacochoerus,africanus,Phacochoerus_africanus,82500,82.5,1.58,3,G
+Hartebeest,Artiodactyla,Bovidae,Alcelaphus,buselaphus,Alcelaphus_buselaphus,164000,164,2.75,20,G
+Kudu,Artiodactyla,Bovidae,Tragelaphus,scriptus,Tragelaphus_scriptus,43300,43.3,0.02,1,B
+Waterbuck,Artiodactyla,Bovidae,Kobus,ellipsiprymnus,Kobus_ellipsiprymnus,202000,202,1.3,12,G

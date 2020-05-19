@@ -1,0 +1,484 @@
+---
+title: "Script_Georgia"
+author: "Johan Pansu"
+date: "01/10/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+Routine series for MOTU clustering, data quality checks and filtering
+========================================================
+
+
+## 1/Libraries needed: ##
+```{r, message=F, warning=F, comment=F}
+#chunk2
+library(vegan)
+library(lattice)
+library(plotrix)
+library(ENmisc)
+library(igraph)
+library(pander)
+library(stringr)
+```
+
+
+** OTU CLUSTERING **
+```{r, cache=T, autodep=TRUE}
+###Upload the table
+OBI1<-read.table('nematodes_2018_assembled_setid_filterE2_nl_uniq_c10_ann_assignEMBL_nematoda_sumatra_sumaclust_assignedR134.tab', sep='\t', h=T)
+dim(OBI1)
+
+###Split the table between the count table (OBI_reads) and the info about the sequence (OBI_motus)
+OBI1_reads<-OBI1[,grep('sample.', colnames(OBI1))]
+OBI1_reads<-t(OBI1_reads)
+dim(OBI1_reads)
+rownames(OBI1_reads)<-str_replace_all(rownames(OBI1_reads), 'sample.', '')
+OBI1_motus<-OBI1[,-grep('sample.', colnames(OBI1))]
+dim(OBI1_motus)
+head(OBI1_motus)
+unique(OBI1_motus[which(is.na(OBI1_motus$species_name_ok)==F),]$species_name_ok)
+# there are only actually 10 species that are matched with genetic IDs :(
+
+
+###Group sequences into mOTUs. You need to select the right column according the the clustering level you want. Note that 2 different types of clustering have been used, hereafter called sumatra and sumaclust. You may want to use sumatra (for which I generated cluster at different levels: 0.9, 0.95, 0.96, 0.97, 0.98 and 0.99). Sumaclust is here FYI and has only 2 clustering levels (0.97 and 0.99). The column name to choose can therefore be either:
+#cluster_sumatra90
+#cluster_sumatra95
+#cluster_sumatra96
+#cluster_sumatra97
+#cluster_sumatra98
+#cluster_sumatra99 -- 
+#sumaclust97_cluster
+#sumaclust99_cluster 
+
+#In the example below, we set up the the clustering level at 99 (with sumatra)
+Clust_Level<-'cluster_sumatra98'
+Clust<-OBI1_motus[,grep(Clust_Level, colnames(OBI1_motus))]
+List_Clust<-list(OBI1_motus[,grep(Clust_Level, colnames(OBI1_motus))])
+
+OBI1_READS<-t(OBI1_reads)
+# for Sumaclust, need to change something
+ClustSeq_Reads<-aggregate(OBI1_READS, by=List_Clust, sum) # takes a while
+
+length(ClustSeq_Reads[,1])
+length(unique(ClustSeq_Reads[,1])) 
+
+rownames(ClustSeq_Reads)<-paste('MOTU_', ClustSeq_Reads[,1], sep='')
+ClustSeq_Reads<-ClustSeq_Reads[,-1]
+head(ClustSeq_Reads)
+View(ClustSeq_Reads) # whooo
+dim(ClustSeq_Reads) # 960 clusters
+
+
+###Extract the taxonomic information of the most common sequence within each OTU
+ClustSeq_Motus<-matrix(NA, nrow=nrow(ClustSeq_Reads), ncol=ncol(OBI1_motus))
+colnames(ClustSeq_Motus)<-colnames(OBI1_motus)
+rownames(ClustSeq_Motus)<-rownames(ClustSeq_Reads)
+
+for (i in 1:nrow(ClustSeq_Reads)){
+  tutu<-OBI1_motus[Clust==i,]
+  tutu2<-as.matrix(tutu[order(tutu$count, decreasing=T),])
+  ClustSeq_Motus[i,]<-tutu2[1,]
+}
+ClustSeq_Motus<-ClustSeq_Motus[,-grep('cluster', colnames(ClustSeq_Motus))]
+head(ClustSeq_Motus)
+head(OBI1_motus)
+List_Clust
+str(List_Clust)
+
+```
+
+
+
+#### Controls and experimental replicates identification ####
+***!!! modify here according to your replicate/negative control denomination!!!***  
+*e.g.: _a,_b,_c... or _1,_2,_3, or r when duplicated, T for negative controls...*
+
+```{r, cache=T, autodep=TRUE}
+OBI_reads<-t(ClustSeq_Reads)
+OBI_motus<-as.data.frame(ClustSeq_Motus)
+
+#chunk8
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! MODIFY HERE !!!!
+EMPTY=grep("Blank", rownames(OBI_reads)) #black
+EXT_CTL=grep("NEG", rownames(OBI_reads)) #maroon
+POS_CTL=grep("POS", rownames(OBI_reads)) #red
+CONTROLS=c(EXT_CTL, EMPTY, POS_CTL)
+CONTROLS2=c(EXT_CTL, EMPTY)
+CONTROLS3=c(EXT_CTL, POS_CTL)
+
+REPLICATES=rownames(OBI_reads)
+
+#color settings
+COL="lightgrey" 
+BOR="grey"
+COL.s="cyan3"
+BOR.s="cyan4"
+COL.neg='red'
+BOR.neg="darkred"
+COL.all=rep("cyan3",nrow(OBI_reads)); COL.all[EMPTY]="black"; COL.all[EXT_CTL]="maroon"; COL.all[POS_CTL]="red"
+BOR.all=rep("cyan4",nrow(OBI_reads)); BOR.all[EMPTY]="black"; BOR.all[EXT_CTL]="maroon"; BOR.all[POS_CTL]="red"
+```
+
+## 3/ Overall data quality ##
+
+### Sequencing depth and Richness per sample ###
+```{r, cache=T, autodep=TRUE, fig.width=10, fig.height=7, htmlcap='Fig. 2: Reads/OTUs per sample and localization in PCR plates (dot size log10 scaled). Controls in red'}
+#chunk10
+View(OBI_reads)
+# showing the reads per sample (all MOTUs together)
+barplot(rowSums(OBI_reads), col=COL.all, border=BOR.all, xlab="Samples", ylab="Number of reads")
+
+hist(log10(rowSums(OBI_reads[-CONTROLS,])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 Number of Reads", ylab="Number of Samples", xlim=c(0,6))
+hist(log10(rowSums(OBI_reads[CONTROLS2,])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+
+## I am also curious about the distribution of MOTUs within controls vs samples
+barplot(colSums(OBI_reads))
+barplot(OBI_reads[,1], col=COL.all, border=BOR.all)
+barplot(OBI_reads[,2], col=COL.all, border=BOR.all)
+barplot(OBI_reads[,3], col=COL.all, border=BOR.all)
+
+# Ideally, one would want to set a threshold for EACH MOTU based on its distribution in the postive vs control samples, right?
+
+oneMOTU=data.frame(reads=OBI_reads[,1], sample=COL.all)
+oneMOTU %>% group_by(sample) %>% summarise_at(vars(reads), funs(max))
+# black = empty, maroon = ext cont, red = pos, cyan = sample
+# If the maximum is 903 reads in a blank sample then we could eliminate
+
+hist(oneMOTU[oneMOTU$sample=="black",1])
+quantile(oneMOTU[oneMOTU$sample=="black",1],.99)
+# 742 could be the cutoff
+
+length(oneMOTU[oneMOTU$sample=="cyan3"&oneMOTU$reads>903, 1])
+
+ggplot(oneMOTU, aes(x=(reads+1), y=sample))+
+  geom_density_ridges(aes(fill=sample))+
+  scale_x_log10()+
+  geom_vline(xintercept=903)
+
+oneMOTU <- oneMOTU %>% mutate_at(vars(reads),funs(ifelse(.>903,.,0)))
+
+# write a loop that will do this for every column
+
+
+allMOTUs=as.data.frame(OBI_reads)
+allMOTUs$sample <- COL.all
+
+
+for(i in 1:568){
+  limit=max(allMOTUs[allMOTUs$sample=="black",i], allMOTUs[allMOTUs$sample=="maroon",i])
+  allMOTUs <- allMOTUs %>% mutate_at(vars(colnames(allMOTUs[i])), funs(ifelse(.>limit, .-limit, 0)))
+}
+
+allMOTUs %>% group_by(sample) %>% summarize_at(vars(MOTU_1:MOTU_10), funs(max))
+#####
+
+ggplot(allMOTUs, aes(x=rowSums(as.matrix(allMOTUs[,-569]))))+
+  geom_histogram()
+
+### How many samples are now at zero???
+length(which(rowSums(allMOTUs[,-569])==0))  # 223 filtered out, including blanks etc.
+
+rowSums(allMOTUs[allMOTUs$sample=="red",-569])
+
+#####################
+head(allMOTUs)
+# now calculate the row sums
+allMOTUs$total_reads=rowSums(allMOTUs[,-569])
+ggplot(allMOTUs, aes(x=total_reads+1, y=sample))+
+  geom_density_ridges(aes(fill=sample))+
+  geom_jitter(width=0.1,height=0, alpha=0.5)+
+  scale_x_log10()+
+  geom_vline(xintercept=1)
+
+#### one extraction control had more reads than a blank
+rowSums(allMOTUs[allMOTUs$sample=="maroon",-(569:570)]) # only 4 extraction controls
+
+##########
+# If I REALLY wanted to get into the statistics, I could possibly estimate the maximum if I had a sample size of my actual samples for the neg controls. But I think the fact that we OVERsampled these blanks (i.e. put a higher volume), means we are probably ok.
+
+# ok, now which columns have nothing? Only 19 went away
+length(which(colSums(allMOTUs[,-(569:570)])==0))
+
+# could then calculate RRA
+# do that here..
+head(allMOTUs)
+dim(allMOTUs)
+dim(OBI_reads)
+row.names(allMOTUs) <- row.names(OBI_reads)
+#write.csv(allMOTUs, "allMOTUs_sumatra98_GTmethod2020.csv")
+
+############################ Johan's stuff here
+hist(log10((OBI_reads[-CONTROLS,1])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 nb Reads", ylab="Nb samples", xlim=c(0,6))
+hist(log10((OBI_reads[CONTROLS2,1])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+# So threshold 3 makes sense here
+
+hist(log10((OBI_reads[-CONTROLS,2])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 nb Reads", ylab="Nb samples", xlim=c(0,6))
+hist(log10((OBI_reads[CONTROLS2,2])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+# 2.5 makes sense here
+
+
+hist(log10((OBI_reads[-CONTROLS,3])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 nb Reads", ylab="Nb samples", xlim=c(0,6))
+hist(log10((OBI_reads[CONTROLS2,3])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+# 3
+
+hist(log10((OBI_reads[-CONTROLS,4])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 nb Reads", ylab="Nb samples", xlim=c(0,6))
+hist(log10((OBI_reads[CONTROLS2,4])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+# Is this the best way to filter?
+
+############# Me playing around
+# OBnew <- OBI_reads
+# OBnew <- ifelse(OBI_reads[-CONTROLS2,4]>max(OBI_reads[CONTROLS2, 4]),OBI_reads[-CONTROLS2,4], 0)
+# OBnew
+# 
+# OBI_new <- as_tibble(OBI_reads)
+# dim(OBI_new)
+# # if you need to rerun, this calculate the max first and store in a vector
+# for(j in 1:dim(OBI_new)[2]){
+#   for(i in 1:dim(OBI_new)[1]){
+#     OBI_new[i,j] <- ifelse(OBI_new[i,j]>max(OBI_new[CONTROLS2, j]),OBI_new[i,j], 0)
+#   }
+# }
+# # This takes a minute because it's not efficient coding.
+
+# Is this the best way to filter?
+hist(log(colSums(OBI_new)+1))
+hist(log(rowSums(OBI_new)+1))
+# 130 samples/controls are 0 --- not sure how many that would have been before...
+
+sum(OBI_new[,2])
+barplot(OBI_new[,1], col=COL.all, border=BOR.all)
+barplot(OBI_new[,2], col=COL.all, border=BOR.all)
+barplot(OBI_reads[,3], col=COL.all, border=BOR.all)
+
+###Here you can define a threshold based on the number of reads. If you want, you will be later able to discard the samples below this threshold
+thresh.seqdepth=3.5 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!!
+abline(v=thresh.seqdepth, col="black", lty=2, lwd=2); mtext(side=3, paste("cutoff < ", thresh.seqdepth, sep=""), cex=0.8, font=3)
+SMALL=rownames(OBI_reads)[-CONTROLS][which(log10(rowSums(OBI_reads)[-CONTROLS])<thresh.seqdepth)]
+length(SMALL)
+barplot(specnumber(OBI_reads, MARGIN=1), col=COL.all, border=BOR.all, xlab="Samples", ylab="Nb OTUs")
+```
+
+
+### Taxonomic Resolution ###
+
+```{r, cache=T, fig.width=10, fig.height=10}
+#chunk11
+###============= function TaxoRes
+TaxoRes=function(x_reads, x_motus, y,z, thresh){
+  #x_reads = reads table
+  #y_reads = taxo info table
+  #y=column name for taxonomic rank
+  #z=column name for identification score
+  #thresh=threshold below which sequences are considered as not really identified
+  
+  #inital settings
+  require(ROBITools)
+  #a vector encompassing all possible taxonomic levels
+  taxorank=c("superkingdom", "kingdom", "subkingdom", "superphylum", "phylum", "subphylum", "superclass", "class", "subclass",
+             "superorder", "order", "suborder", "infraorder", "superfamily", "family", "subfamily", "supertribe", "tribe", "subtribe",
+             "supergenus", "genus", "subgenus", "superspecies", "species", "subspecies", "varietas", "no rank")
+  
+  #nb of otus
+  tmp=table(x_motus[,y])
+  taxores.otu=tmp[match(taxorank, names(tmp))]
+  names(taxores.otu)=taxorank
+  taxores.otu[which(is.na(taxores.otu)==T)]=0
+  
+  #nb of reads
+  tmp=aggregate(as.numeric(as.vector(x_motus$count)), by=list(x_motus[,y]), sum)
+  taxores.reads=tmp[match(taxorank,tmp[,1]),2]
+  names(taxores.reads)=taxorank
+  taxores.reads[which(is.na(taxores.reads))]=0
+  
+  #set below thresh to not assigned
+  tmp=as.vector(x_motus[,y])
+  tmp[which(as.numeric(as.vector(OBI_motus[,z]))<thresh)]="not assigned"
+  
+  #nb of reads above thresh
+  tmp2=aggregate(as.numeric(as.vector(OBI_motus$count)), by=list(tmp), sum)
+  taxores.reads.t=tmp2[match(c(taxorank, "not assigned"),tmp2[,1]),2]
+  names(taxores.reads.t)=c(taxorank, "not assigned")
+  taxores.reads.t[which(is.na(taxores.reads.t))]=0
+  
+  #nb of otus above thresh
+  tmp2=table(tmp)
+  taxores.otu.t=tmp2[match(c(taxorank, "not assigned"),names(tmp2))]
+  names(taxores.otu.t)=c(taxorank, "not assigned")
+  taxores.otu.t[which(is.na(taxores.otu.t))]=0
+  
+  layout(matrix(c(1,2,3,1,4,5),3,2),heights=c(0.4,1,1))
+  col.tmp=c(rainbow(length(taxorank)-1,start=0, end=0.5, alpha=0.6), "lightgrey", "darkgrey")
+  par(mar=c(1,1,1,1), oma=c(0,0,2,0))
+  frame()
+  legend("bottom", names(taxores.otu.t), ncol=5, cex=0.7, fill=col.tmp)
+  pie(taxores.otu, col=col.tmp, border="lightgrey", labels="", clockwise=T)
+  mtext("All data", side=2, cex=0.8)
+  mtext(expression(OTUs[100]), side=3, cex=0.8)
+  pie(taxores.otu.t, col=col.tmp, border="lightgrey", labels="", clockwise=T)
+  mtext(paste("Best identities >", thresh) , side=2, cex=0.8)
+  pie(taxores.reads, col=col.tmp, border="lightgrey", labels="", clockwise=T)
+  mtext("Reads", side=3, cex=0.8)
+  pie(taxores.reads.t, col=col.tmp, border="lightgrey", labels="", clockwise=T)
+  
+  out=data.frame(otu=c(taxores.otu,0), reads=c(taxores.reads,0), otu.thresh=taxores.otu.t, reads.thresh=taxores.reads.t)
+  rownames(out)[length(taxorank)+1]="not assigned"
+  out
+}
+###============= end
+
+raw.taxores.all=TaxoRes(OBI_reads, OBI_motus, "rank_ok", "bid_ok", 0.90); title("All data", outer=T)
+```
+
+
+
+### Contamination level ###
+#### True Contaminant ####
+Identification: OTU detected with max frequency in negative controls + relatives (clustering if done or best_matchID)
+
+My notes -- max frequency is the proportion of times... so what % of OTUs of each group had a given OTU. If that % was higher in neg conts vs the regular ones, then we should get rid of that OTU? Does that seem right? To me, that does not seem accurate, because if there is a low level of everything floating around and we up the volume for our blanks, then we are almost guaranteed to have a higher frequency.
+
+```{r, cache=T, fig.width=10, fig.height=10}
+#chunk12
+###============= function ContaSlayer
+ContaSlayer=function(x_reads, x_motus, y){
+  #x_reads = reads table
+  #y_reads = taxo info table
+  #y a vector of samples names where conta are suspected to be (typically negative controls)
+  require(vegan)
+  x.fcol=decostand(x_reads, "total", 2)
+  x.max=rownames(x.fcol[apply(x.fcol, 2, which.max),])
+  conta1=colnames(x_reads)[which(is.na(match(x.max,y))==F)]
+  conta2=conta1
+  conta2
+}  
+###============= end
+
+###If you want to also include Blank in this, use CONTROLS instead of CONTROLS3
+CONTA=ContaSlayer(OBI_reads, OBI_motus, rownames(OBI_reads)[CONTROLS])
+
+###Get taxo info about contaminant
+pandoc.table(data.frame(OBI_motus[CONTA,c(grep("best_identity", colnames(OBI_motus)),grep("best_match", colnames(OBI_motus)))],
+                        OBI_motus[CONTA,c("bid_ok", "scientific_name_ok", "count")],
+                        do.call("rbind", lapply(CONTA, function(x) {
+                          ind=which.max(OBI_reads[,x])
+                          sample.max=names(ind)
+                          count.max=OBI_reads[sample.max,x]
+                          data.frame(sample.max, count.max)
+                          })),
+                        nb.sample.occ=unlist(lapply(CONTA, function(x) length(which(OBI_reads[,x]!=0))))
+                        ),split.tables=Inf)
+```
+
+
+Freq of contaminants in samples
+```{r, cache=T, autodep=TRUE,  fig.width=15, fig.height=10}
+#chunk13
+OBI.freq=decostand(OBI_reads,"total",1)
+```
+
+
+Heavily contamined samples
+```{r,  cache=T, autodep=TRUE,  fig.width=10, fig.height=5}
+#chunk14
+par(mar=c(4,4,1,1), mfrow=c(1,2))
+if (length(CONTA)==1){
+  hist(log10(OBI.freq[-CONTROLS,CONTA]+1e-5), breaks=20, col=COL, xlim=log10(c(0,1)+1e-5), main="", xlab="log10 Prop conta reads (non filtered data)")  
+  
+  #most likely to be bad samples
+  thresh.contasamp=-2 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!! Note that this threshold corresponds to 1% : log10(0.01) == -2
+  ###Here you can identify highly contaminated samples and then later remove them if you want
+  CONTASAMP=rownames(OBI_reads)[-CONTROLS][which(log10(OBI.freq[-CONTROLS,CONTA]+1e-5)>=thresh.contasamp)]
+  abline(v=thresh.contasamp, lty=2, lwd=2); mtext(paste("cutoff >= ", thresh.contasamp, sep=""),side=3, line=0, cex=0.7, font=3)
+}
+
+
+if (length(CONTA)>1){
+  hist(log10(rowSums(OBI.freq[-CONTROLS,CONTA])+1e-5), breaks=20, col=COL, xlim=log10(c(0,1)+1e-5), main="", xlab="log10 Prop conta reads (non filtered data)")
+  
+  #most likely to be bad samples
+  thresh.contasamp=-2 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!! Note that this threshold corresponds to 1% : log10(0.01) == -2
+  ###Here you can identify highly contaminated samples and then later remove them if you want
+  CONTASAMP=rownames(OBI_reads)[-CONTROLS][which(log10(rowSums(OBI.freq[-CONTROLS,CONTA])+1e-5)>=thresh.contasamp)]
+  abline(v=thresh.contasamp, lty=2, lwd=2); mtext(paste("cutoff >= ", thresh.contasamp, sep=""),side=3, line=0, cex=0.7, font=3)
+}
+
+```
+
+#### Odd OTUs with low identification scores ####
+Identification
+```{r,  cache=T, autodep=TRUE,  fig.width=10, fig.height=7}
+#chunk15
+par(mfrow=c(1,2), oma=c(0,0,2,0))
+weighted.hist(as.numeric(as.vector(OBI_motus[, "bid_ok"])), as.numeric(as.vector(OBI_motus[, "count"])), breaks=20, col=COL, ylab="Nb reads", xlab="Ecotag scores",)
+###Here you can identify samples with a lot of Poorly assigned OTU (probably not super relevant for you because scores are overal pretty low) 
+thresh.oddotu=0.7 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!!
+abline(v=thresh.oddotu, lty=2, lwd=2)
+hist(as.numeric(as.vector(OBI_motus[, "bid_ok"])), breaks=20, col=COL, xlab="Ecotag scores", main="", ylab="Nb. OTUs")
+abline(v=thresh.oddotu, lty=2, lwd=2)
+mtext(side=3, paste("cutoff < ", thresh.oddotu, sep=""), cex=0.7, font=3, outer=T, line=1)
+
+ODDOTU=rownames(OBI_motus)[which(as.numeric(as.vector(OBI_motus[, "bid_ok"]))<thresh.oddotu)]
+mtext(side=3, paste("nb seq. with score < cutoff = ", length(ODDOTU)), cex=0.7, font=3, outer=T, line=0)
+
+pandoc.table(data.frame(OBI_motus[ODDOTU,c(grep("best_identity", colnames(OBI_motus)),grep("best_match", colnames(OBI_motus)))],
+                        OBI_motus[ODDOTU,c("bid_ok","scientific_name_ok","count")],
+                        do.call("rbind", lapply(ODDOTU, function(x) {
+                          ind=which.max(OBI_reads[,x])
+                          sample.max=names(ind)
+                          count.max=OBI_reads[sample.max,x]
+                          data.frame(sample.max, count.max)
+                        })),
+                        nb.sample.occ=unlist(lapply(ODDOTU, function(x) length(which(OBI_reads[,x]!=0)))))
+             [order(ODDOTU),],split.tables=Inf, split.cells=20)
+
+```
+
+
+Sample with many odd OTUs
+```{r,  cache=T, fig.width=10, fig.height=5}
+#chunk17
+par(mar=c(4,4,1,1), mfrow=c(1,2))
+hist(log10(rowSums(OBI.freq[-CONTROLS,ODDOTU])+1e-5), breaks=20, col=COL, xlim=log10(c(0,1)+1e-5), main="", xlab="Prop conta2 reads")
+
+###Samples most likely to be bad samples because they contains many contaminants
+thresh.oddotusamp=-2  #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!!
+ODDOTUSAMP=rownames(OBI_reads)[-CONTROLS][which(log10(rowSums(OBI.freq[,ODDOTU])+1e-5)>=thresh.oddotusamp)]
+abline(v=thresh.oddotusamp, lty=2, lwd=2); mtext(paste("cutoff >= ", thresh.oddotusamp, sep=""),side=3, line=0, cex=0.7, font=3)
+```
+
+
+
+### Data filtering 1 ###
+Get rid off identified contaminant and odd OTUs and effects on dataset sequencing depth, taxo resolution
+```{r, cache=T, fig.width=10, fig.height=5}
+#chunk18
+###Remove contaminants and sequences with low assignment score
+OBI2_reads=OBI_reads[,-match(unique(c(CONTA, ODDOTU)), colnames(OBI_reads))]
+OBI2_motus=OBI2_motus[which(rownames(OBI2_motus) %in% colnames(OBI2_reads)),]
+OBI2_OBI2_motus$count=colSums(OBI2_reads)
+
+
+###Remove samples with low sequencing depth
+OBI3_reads=OBI2_reads[-c(match(SMALL, rownames(OBI2_reads))),]
+###Additionnally remove controls and highly contaminated samples if you want
+#OBI3_reads=OBI3_reads[-c(CONTROLS, match(c(CONTROLS, ODDOTUSAMP), rownames(OBI3_reads))),]
+OBI3_motus=OBI3_motus[which(rownames(OBI3_motus) %in% colnames(OBI3_reads)),]
+OBI3_motus$count=colSums(OBI2_reads)
+```
+
+
+Data export
+```{r}
+tmp<-t(OBI3_reads)
+colnames(tmp)=paste("sample:", colnames(tmp), sep="")
+write.table(data.frame(OBI3_motus,tmp), 'NewTab_filtered.tab', row.names=F, col.names=T, sep="\t")
+
+####At this stage, you can also convert your table into relative read abundance (RRA) using the 'decostand' function in vegan
+#e.g. Tab_reads_new1<-decostand(OBI3_reads, 'total')
+####Then, in each sample, if a sequence represents <1% of the total number of the number of reads, you can consider that it's absent from this sample and thus set it to 0
+#e.g. Tab_reads_new1[Tab_reads_new1<0.01]<-0
+```
+
