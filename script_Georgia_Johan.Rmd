@@ -47,7 +47,7 @@ OBI1_motus<-OBI1[,-grep('sample.', colnames(OBI1))]
 #sumaclust99_cluster
 
 #In the example below, we set up the the clustering level at 99 (with sumatra)
-Clust_Level<-'cluster_sumatra99'
+Clust_Level<-'cluster_sumatra98'
 Clust<-OBI1_motus[,grep(Clust_Level, colnames(OBI1_motus))]
 List_Clust<-list(OBI1_motus[,grep(Clust_Level, colnames(OBI1_motus))])
 
@@ -83,10 +83,10 @@ OBI_motus<-as.data.frame(ClustSeq_Motus)
 #chunk8
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! MODIFY HERE !!!!
 EMPTY=grep("Blank", rownames(OBI_reads)) #black
-EXT_CTL=grep("NEG", rownames(OBI_reads)) #maroon
+EXT_CTL=grep("NEG", rownames(OBI_reads)) #maroon these are actually just blanks
 POS_CTL=grep("POS", rownames(OBI_reads)) #red
 CONTROLS=c(EXT_CTL, EMPTY, POS_CTL)
-CONTROLS2=c(EXT_CTL, EMPTY)
+CONTROLS2=c(EMPTY, EXT_CTL)
 CONTROLS3=c(EXT_CTL, POS_CTL)
 
 REPLICATES=rownames(OBI_reads)
@@ -111,11 +111,12 @@ barplot(rowSums(OBI_reads), col=COL.all, border=BOR.all, xlab="Samples", ylab="N
 
 hist(log10(rowSums(OBI_reads[-CONTROLS,])), breaks=40,  col=rgb(0,0,1,0.5), main="", xlab="log10 nb Reads", ylab="Nb samples", xlim=c(0,6))
 hist(log10(rowSums(OBI_reads[CONTROLS2,])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
+hist(log10(rowSums(OBI_reads[CONTROLS3,])), breaks=40,  col=rgb(1,0,0,0.5), add=T)
 
 
 
 ###Here you can define a threshold based on the number of reads. If you want, you will be later able to discard the samples below this threshold
-thresh.seqdepth=3.5 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!!
+thresh.seqdepth=log10(1) #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ !!!! CUTOFF HERE !!!! log10(3000)
 abline(v=thresh.seqdepth, col="black", lty=2, lwd=2); mtext(side=3, paste("cutoff < ", thresh.seqdepth, sep=""), cex=0.8, font=3)
 SMALL=rownames(OBI_reads)[-CONTROLS][which(log10(rowSums(OBI_reads)[-CONTROLS])<thresh.seqdepth)]
 
@@ -329,9 +330,11 @@ OBI3_motus$count=colSums(OBI2_reads)
 
 Data export
 ```{r}
-tmp<-t(OBI3_reads)
+tmp<-t(OBI3_reads) #should be OBI3 normally but OBI2 for no filter
+OBI3_motus$MOTU = rownames(OBI3_motus)
 colnames(tmp)=paste("sample:", colnames(tmp), sep="")
-write.table(data.frame(OBI3_motus,tmp), 'Johan99_filtered.tab', row.names=F, col.names=T, sep="\t")
+
+write.table(data.frame(OBI3_motus,tmp), 'Johan98_notfiltered.tab', row.names=T, col.names=T, sep="\t")
 
 ####At this stage, you can also convert your table into relative read abundance (RRA) using the 'decostand' function in vegan
 Tab_reads_new1<-decostand(OBI3_reads, 'total')
