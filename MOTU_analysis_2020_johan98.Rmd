@@ -19,7 +19,7 @@ library(adephylo)
 library(ape)
 library(phylobase)
 library(philentropy)
-library(ComplexHeatmap)
+#library(ComplexHeatmap)
 library(lmerTest)
 library(emmeans)
 
@@ -32,98 +32,88 @@ library(emmeans)
 ```{r}
 
 
-OTUtab <- read.csv("allMOTUs_sumatra98_GTmethod2020.csv")
+OTUtab <- read.delim("Johan98_filtered.tab")
 dim(OTUtab)
 
+# reorient
+tt = as.data.frame(t(OTUtab[,15:667]))
+tt$sample = names(OTUtab[,15:667])
+tt = tt[-1,]
+tt$sample = gsub("sample.","",tt$sample)
+rownames(tt) = tt$sample
+tt = tt[,-568]
+
+# reorient for not filtered
+# tt = as.data.frame(t(OTUtab[,15:975]))
+# tt$sample = names(OTUtab[,15:975])
+# tt = tt[-1,]
+# tt$sample = gsub("sample.","",tt$sample)
+# rownames(tt) = tt$sample
+# tt = tt[,-568]
+
+tt2 = tt %>% mutate_all(funs(as.numeric(as.character(.))))
+rownames(tt2) = rownames(tt)
+
 # sequencing depth
-median(rowSums(OTUtab[,-c(1,570,571)])) 
-mean(rowSums(OTUtab[,-c(1,570,571)]))
-hist(rowSums(OTUtab[,-c(1,570,571)]))
+median(rowSums(tt2)) 
+mean(rowSums(tt2))
+hist(rowSums(tt2))
 
 # Remove samples with reads = 0
-OTUtabsmall <- OTUtab[-which(rowSums(OTUtab[,-c(1,570,571)])==0),]
-dim(OTUtabsmall)
+which(rowSums(tt2)<3000)
+# only controls since we filtered out
+
+# rarify
+RRArare = Rarefy(tt2, depth=3000)$`otu.tab.rff`
+#specnumber(RRArare)
 
 # calculate relative reads per sample
-#RRAtab <- OTUtabsmall %>% mutate_at(vars(MOTU_1:MOTU_568), funs(./total_reads))
+RRAtab = as.data.frame(decostand(tt2, method="total"))
 
 # mutate rows that have RRA less than 1% to 0
-#RRAtab_filt <- RRAtab %>% mutate_at(vars(MOTU_1:MOTU_568), funs(ifelse(.<0.01,0,.)))
+RRAtab_filt = RRAtab %>% mutate_at(vars(MOTU_1:MOTU_568), funs(ifelse(.<0.01,0,.)))
 
 # How many OTUs are now zero?
-#length(which(colSums(RRAtab_filt[,2:569])==0))
+length(which(colSums(RRAtab_filt)==0))
 
 # Remove those columns
-#RRAtab_filt2 <- RRAtab_filt[,-(which(colSums(RRAtab_filt[,2:569])==0)+1)]
-#dim(RRAtab_filt2)
-
-
-mean(RRAtab_filt2$total_reads)
-median(RRAtab_filt2$total_reads)
-min(RRAtab_filt2$total_reads)
-
-hist(RRAtab_filt2$total_reads)
-ggplot(RRAtab_filt2, aes(x=total_reads))+
-  geom_histogram(binwidth=0.1)+
-  scale_x_log10(breaks=c(1,10,100,1000,10000))+
-  geom_vline(xintercept=100, col="red", size=2)+
-  theme_bw(base_size=14)
-
-# 100 seems to be a reasonable threshold (this is after adjusting for negative controls)
-
-
-```
-
-### 1.2 Filtering
-
-```{r}
-
-
-# Remove samples with reads<100. I used the Albatross paper for reference here..change to 3000
-OTUtabsmall <- OTUtab[-which(rowSums(OTUtab[,-c(1,570,571)])<1000),]
-# now rarefy
-OTUtabsmall2 = Rarefy(OTUtabsmall[,-c(1,570,571)], depth=1000)$otu.tab.rff
-OTUtabsmall2 = as.data.frame(OTUtabsmall2)
-RRAtab = as.data.frame(decostand(OTUtabsmall2, method="total"))
-RRAtab$X = OTUtabsmall$X
-head(RRAtab)
-dim(RRAtab)
-
-# Calculate RRA
-#RRAtab <- OTUtabsmall %>% mutate_at(vars(MOTU_1:MOTU_568), funs(./total_reads))
-
-# Filter out >1% RRA
-RRAtab_filt <- RRAtab %>% mutate_at(vars(MOTU_1:MOTU_568), funs(ifelse(.<0.01,0,.)))
-
-# How many OTUs are now zero?
-length(which(colSums(RRAtab_filt[,1:568])==0))
-
-# Remove those columns
-RRAtab_filt2 <- RRAtab_filt[,-(which(colSums(RRAtab_filt[,1:568])==0))]
+rownames(RRAtab_filt) = rownames(RRAtab)
+RRAtab_filt2 = RRAtab_filt[,-(which(colSums(RRAtab_filt)==0))]
 dim(RRAtab_filt2)
 
-# Currently we have 158 MOTUs in 444 samples
-# below is no longer relevant
-mean(RRAtab_filt2$total_reads)
-median(RRAtab_filt2$total_reads)
-min(RRAtab_filt2$total_reads)
-
-ggplot(RRAtab_filt2, aes(x=total_reads))+
-  geom_histogram(binwidth=0.1)+
-  scale_x_log10(breaks=c(1,10,100,1000,10000))+
-  geom_vline(xintercept=100, col="red", size=2)+
-  theme_bw(base_size=14)
 
 ```
+
+
 
 ### 1.3 Relationship between reads and richness -- is rarefaction warranted?
 
 ```{r}
-RRAtab_filt2$richness <- specnumber(RRAtab_filt2[,2:176])
+tt2$richness = specnumber(tt2)
+tt2$total_reads = rowSums(tt2[,(-dim(tt2)[2])])
 
-ggplot(RRAtab_filt2, aes(x=log(RRAtab_filt2$total_reads), y=richness))+
-  geom_jitter(width=0.5,height=0.5)+
-  geom_smooth(method="lm")
+ggplot(tt2, aes(x=total_reads, y=richness))+
+  geom_jitter(width=0.5,height=0.5)
+
+# further investigation of blanks
+
+# identity of each MOTU's most abundant sample
+maxes = apply(tt2, 2, which.max)
+head(maxes)
+maxes = as.data.frame(maxes)
+maxes$sampleid = rownames(tt2)[maxes$maxes]
+
+maxes[grep("Blank",maxes$sampleid),]
+
+# calculate using relative freq
+maxes = apply(RRAtab, 2, which.max)
+head(maxes)
+maxes = as.data.frame(maxes)
+maxes$sampleid = rownames(RRAtab)[maxes$maxes]
+
+maxes[grep("Blank",maxes$sampleid),]
+
+qplot(rowSums(tt2[1:120,]))+scale_x_continuous(limits=c(0,5000))
 
 ```
 
@@ -154,11 +144,8 @@ mean(RRAtab_filt2$total_reads, na.rm=T)
 median(RRAtab_filt2$total_reads, na.rm=T)
 min(RRAtab_filt2$total_reads, na.rm=T)
 
-RRAtab_filt2 = RRAtab_filt2[,c(169,1:168)]
-names(RRAtab_filt2)[1]="Sample_ID"
-
 # save a copy
-#write.csv(RRAtab_filt2, "RRAtab_filt2_g98.csv", row.names=F)
+#write.csv(RRAtab_filt2, "RRAtab_filt2_j98.csv", row.names=T)
 
 ```
 
@@ -169,49 +156,87 @@ names(RRAtab_filt2)[1]="Sample_ID"
 
 ```{r}
 
-RRA_rare <- read.csv("RRAtab_filt2_g98.csv")
-#head(RRA_rare)
+RRA_rare <- read.csv("RRAtab_filt2_j98.csv")
+head(RRA_rare)
+
+names(RRA_rare)[1] = "Sample_ID"
 RRA_hosts <- read_excel("SAMPLE_SUMMARY.xlsx",sheet="Sheet1")
 
+head(RRA_hosts)
 # Combine MOTU table with host data
-RRA2 = full_join(RRA_hosts, RRAtab_filt2)
+# make non RRA table
+tt2$Sample_ID = rownames(tt2)
+RRA2 = full_join(RRA_hosts, RRA_rare)
+tt3 = full_join(RRA_hosts, tt2)
 dim(RRA2)
 
-RRA2[which(is.na(RRA2$Location)),] # only one duplicate sample has no associated info
-#RRA2=RRA2[-which(is.na(RRA2$Location)),]
+RRA2[which(is.na(RRA2$Species)),]$Sample_ID # only one duplicate sample has no associated info
+#RRA2=RRA2[-which(is.na(RRA2$Location)),] # removes positive and neg samples
+# note positive and neg
+RRA2$Species = as.character(RRA2$Species)
+RRA2$Species[which(is.na(RRA2$Species))[1:120]] = "Blank"
+RRA2$Species[which(is.na(RRA2$Species))[1]] = "Cow"
+RRA2$Species[which(is.na(RRA2$Species))[1:4]] = "Neg"
+RRA2$Species[which(is.na(RRA2$Species))] = "Pos"
+
+tt3$Sample_ID[which(is.na(tt3$Species))]
+tt3$Species = as.character(tt3$Species)
+tt3$Species[which(is.na(tt3$Species))[1:120]] = "Blank"
+tt3$Species[which(is.na(tt3$Species))[1]] = "Cow"
+tt3$Species[which(is.na(tt3$Species))[1]] = "Elephant"
+tt3$Species[which(is.na(tt3$Species))[1]] = "Hartebeest"
+tt3$Species[which(is.na(tt3$Species))[1]] = "Plains zebra"
+tt3$Species[which(is.na(tt3$Species))[1:4]] = "Neg"
+tt3$Species[which(is.na(tt3$Species))] = "Pos"
 
 # Use only the qPCR prevalence
-RRA2 = RRA2[which(RRA2$rd_2_qpcr_conducted=="Y"),]
+RRA2 = RRA2[which(RRA2$rd_2_qpcr_conducted=="Y" | RRA2$Species %in% c("Blank","Neg","Pos")),]
 dim(RRA2)
 
-# remove animals not focused on
-RRA2 = RRA2[-which(RRA2$Species %in% c("Bushbuck","NTC","Goat","Sheep","EC","Oribi")),]
-# All NA values indicate additional zeros
+tt3 = tt3[which(tt3$rd_2_qpcr_conducted=="Y" | tt3$Species %in% c("Blank","Neg","Pos")),]
 
-names(RRA2)
+
+# remove animals not focused on
+RRA2 = RRA2[-which(RRA2$Species %in% c("Bushbuck","Goat","Sheep","Oribi")),]
+# All NA values indicate additional zeros
+tt3 = tt3[-which(tt3$Species %in% c("Bushbuck","Goat","Sheep","Oribi")),]
+
+names(tt3)
 # select columns of interest
-RRA2 = RRA2[,c(1:14,16:183)]
+
+RRA2 = RRA2[,c(1:14,16:194)]
+tt3 = tt3[,c(1:14,16:582)]
 head(RRA2)
 
 # Replace NA values with 0 for samples that were undetected
 # This includes things that were not screened
 RRA2 = RRA2 %>% mutate_at(vars(MOTU_1:MOTU_557), funs(ifelse(is.na(.),0,.)))
-names(RRA2)
+tt3 = tt3 %>% mutate_at(vars(MOTU_1:MOTU_568), funs(ifelse(is.na(.),0,.)))
+
+
+head(RRA2)
+
 ```
+
+
+
 
 ### 2.2 Calculate richness
 
 ```{r}
 
 # Add MOTU richness for each sample (after rarifying to same reads)
-RRA2$richness = specnumber(RRA2[,15:189])
+RRA2$richness = specnumber(RRA2[,15:153])
+tt3$richness = specnumber(tt3[,16:581])
+ggplot(tt3, aes(x=Species, y=richness))+
+  geom_boxplot()
 
 # Calculate species level richness
 sumR = RRA2 %>% group_by(Location, Species) %>% summarize_at(vars(MOTU_1:MOTU_557),funs(sum(.,na.rm=T)))
-richy = specnumber(sumR[,3:177])
+richy = specnumber(sumR[,3:141])
 
 # Determine the number of samples examined
-numR = RRA2 %>% group_by(Location, Species) %>% summarize(count=n())
+numR = RRA2 %>% group_by(Location, Species) %>% summarise(count = n())
 numR$total_richness=richy
 
 # Determine the average individual richness by species
@@ -248,12 +273,19 @@ ggplot(numR, aes(x=ind_rich, y=total_richness))+
 ```{r}
 # define palette for all species
 
-animal_colors=c("#6CA6CD", "#CD919E", "#EE799F", "#A2CD5A", "#7EC0EE", "#CD6090", "#63B8FF", "#9BCD9B", "#CD8C95", "#4F94CD", "#8DB6CD", "#6495ED", "#CDC673", "#BDB76B", "#7AC5CD", "#9370DB", "#6A5ACD", "#7CCD7C", "#87CEFF")
+tt3$Species = as.factor(tt3$Species)
+tt3$Species = factor(tt3$Species, levels=levels(reorder(tt3$Species,-tt3$richness)))
+levels(tt3$Species)
+
+animal_colors=c("#6CA6CD", "#CD919E", "#EE799F", "#A2CD5A","turquoise", "#7EC0EE", "#CD6090", "#63B8FF",  "blue","#9BCD9B", "#CD8C95", "red","#4F94CD", "#8DB6CD", "#6495ED", "#CDC673", "#BDB76B", "#7AC5CD", "#9370DB", "#6A5ACD", "#7CCD7C", "#87CEFF", "gray70", "gray")
 
 RRA2$Species = as.factor(RRA2$Species)
 RRA2$Species = factor(RRA2$Species, levels=levels(reorder(RRA2$Species,-RRA2$richness)))
+levels(RRA2$Species)
 
-withzeros = ggplot(RRA2, aes(x=reorder(Species,-richness), y=richness))+
+animal_colors=c("red", "blue", "gray", "#6CA6CD", "#CD919E", "#EE799F", "#A2CD5A", "#7EC0EE", "#CD6090", "#63B8FF", "#9BCD9B", "#CD8C95", "#4F94CD", "#8DB6CD", "#6495ED", "#CDC673", "#BDB76B", "#7AC5CD", "#9370DB", "#6A5ACD", "#7CCD7C", "#87CEFF", "gray70","turquoise")
+
+withzeros = ggplot(tt3, aes(x=reorder(Species,-richness), y=richness))+
   geom_jitter(width=0.01,height=0.3, alpha=0.5, aes(color=Species))+
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill=F,col=F)+
@@ -263,7 +295,7 @@ withzeros = ggplot(RRA2, aes(x=reorder(Species,-richness), y=richness))+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
   labs(x="Host Species",y="Rarified OTU richness",title="Individual-level Richness (with 0s)")
 
-nozeros = ggplot(RRA2[RRA2$richness!=0,], aes(x=reorder(Species,-richness,na.rm=T), y=richness))+
+nozeros = ggplot(tt3[tt3$richness!=0,], aes(x=reorder(Species,-richness,na.rm=T), y=richness))+
   geom_jitter(width=0.01,height=0.3, alpha=0.5, aes(color=Species))+
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill=F,col=F)+
@@ -343,8 +375,9 @@ ggplot(prevdf[-which(prevdf$Species=="Hippo"&prevdf$Location=="Kafue"),], aes(x=
 # Does individual richness vary significantly by species? -- Question for MP data
 # not including zero data:
 RRA_present = RRA2[which(RRA2$richness>0),]
+tt3_present = tt3[which(tt3$richness>0),]
 MPdata = RRA_present[RRA_present$Location=="Mpala",]
-
+MPdata_tt3 = tt3_present[tt3_present$Location=="Mpala"|tt3_present$Species %in% c("Blank","Pos","Neg"),]
 # show distribution
 hist(MPdata$richness)
 
@@ -396,18 +429,21 @@ hist(MPdata_0$richness)
 library(glmmTMB)
 
 # little zero inflation variation when modeled by species, so changed to 1
-richmodMP0.1 = glmmTMB(richness ~ Species+(1|Period), ziformula=~Species, family="nbinom2",data=MPdata_0,REML=T)
+MPdata_0$Period[MPdata_0$Period=="NA"] = "None"
 
-richmodMP0 = glmmTMB(richness ~ Species+(1|Period), ziformula=~1, data=MPdata_0, family="nbinom2", REML=T)
+richmodMP0.1 = glmmTMB(richness ~ Species+(1|Period), ziformula=~., family="poisson", data= MPdata_0[-which(MPdata_0$Species == "Blank"),], REML=F)
+
+richmodMP0 = glmmTMB(richness ~ Species+(1|Period), ziformula=~1 , data=MPdata_0[-which(MPdata_0$Species == "Blank"),], family="nbinom1", REML=F)
+
 
 bbmle::AICctab(richmodMP0.1,richmodMP0)
 # convergence problems with REML=F, comparable zi results, so z formula is 1
 
 #MuMIn::r.squaredGLMM(richmodMP0)
 
-testResiduals(simulateResiduals(richmodMP0))
+testResiduals(simulateResiduals(richmodMP0.1))
 
-summary(richmodMP0)
+summary(richmodMP0.1)
 car::Anova(richmodMP0, test.statistic="Chisq")
 
 
@@ -429,10 +465,18 @@ MuMIn::r.squaredGLMM(richmodMP)
 # Nearly 60% of variation in richness explained by host species for Mpala dataset
 
 # with zeros
-ems0 = emmeans(richmodMP0, ~Species)
+ems0 = emmeans(richmodMP0.1, ~Species)
 CLD(ems0)
 contrast(ems0, adjust="holm")
 #MuMIn::r.squaredGLMM(richmodMP0) # not available with zero inflation
+
+
+# spearman rank correlation of 98% results from my method to this
+gtmeth = data.frame(sp = c("PZ","GG","GZ","E", "HZ", "I","O","HA", "D","GI","ELA","HIP","B","CAM","DIK","C","WAR","K","WAT"), rank1 = seq(1:19))
+jpmeth = data.frame(sp = c("GG","WAT","O","GZ","PZ","E","I","HA","GI","CAM","DIK","D","HZ","B","K","ELA","HIP","C","WAR"), rank2 = seq(1:19))
+compmeth = merge(gtmeth,jpmeth)
+cor.test(compmeth$rank1,compmeth$rank2, method="spearman")
+
 
 ```
 
@@ -465,6 +509,8 @@ ggplot(MP2[-which(MP2$Species=="Hybrid zebra"),], aes(x=Diet, y=richness))+
   scale_fill_sjplot(palette="aqua")
 
 richmoddy = lm(richness ~ Diet*log(HomeRange_km2)+log(SocialGrpSize)+log(Body_Mass_kg)+MSW93_Family, data=MP2)
+richmoddy2 = lm(richness ~Diet*log(HomeRange_km2)+log(Body_Mass_kg)+MSW93_Family, data=MP2)
+
 anov = aov(richness ~ Diet, data=MP2)
 summary(anov)
 
@@ -493,8 +539,8 @@ hr = ggplot(MP2[-which(is.na(MP2$MSW93_Species)),], aes(x=log(HomeRange_km2), y=
   #geom_smooth(aes(col=MSW93_Family),method="lm",se=F)+
   geom_smooth(method="lm",color="black",size=1.5)+
   labs(x=bquote("log(Homerange (km"^2*"))"), y="Mean Individual Richness",col="Family",shape="Order")+
-  annotate("text",x=-2.5, y=5.5,label=paste("R^2==0.27"),parse=T, size=5)+
-  annotate("text",x=-2.5, y=5, label=paste("p==0.03"),parse=T, size=5)+
+  annotate("text",x=-2.5, y=5.5,label=paste("R^2==0.21"),parse=T, size=5)+
+  annotate("text",x=-2.5, y=5, label=paste("p==0.05"),parse=T, size=5)+
   theme_bw(base_size=14)
 
 gp = ggplot(MP2[-which(is.na(MP2$MSW93_Species)),], aes(x=log(SocialGrpSize), y=richness))+
@@ -527,7 +573,10 @@ gridExtra::grid.arrange(gridExtra::grid.arrange(bm, gp,nrow=2), hr, ncol=2,width
 # subset data for Longitudinal species
 
 # No zeros
-LONGdata=RRA_present[RRA_present$Species %in% c("Warthog","Plains zebra","Elephant","Kudu","Buffalo","Impala"),]
+LONGdata=RRA_present[RRA_present$Species %in% c("Warthog","Plains zebra","Elephant","Kudu","Buffalo","Impala","Blank","Pos","Neg"),]
+
+ggplot(LONGdata, aes(x=Species, y=MOTU_1))+
+  geom_boxplot()
 
 # add rainfall
 raindat = data.frame(Location=levels(as.factor(LONGdata$Location)), MAP2 = c(1336,894,576,769,541,529,1032,1006,900))
@@ -748,7 +797,7 @@ ggplot(LONGdata,  aes(x=MAP2, y=richness))+
 ## Species-level richness
 
 ```{r}
-specpool(MPdata_0[,15:176],MPdata_0$Species)
+specpool(MPdata_0[,15:153],MPdata_0$Species)
 
 
 MPdata_0 %>% group_by(Species) %>% summarize(n())
@@ -779,7 +828,7 @@ ggplot(newMP_sp, aes(x=reorder(Species,-richness), y=richness))+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
   labs(y="Richness across ~15 individuals")
 
-speculative = specpool(newMP[,15:176],newMP$Species)
+speculative = specpool(MPdata_0[,15:153],MPdata_0$Species)
 speculative$Host=row.names(speculative)
 
 
@@ -1019,13 +1068,14 @@ MOTU = RRA2 %>% group_by(Species) %>%
   t()%>%
   as.data.frame()
 names(MOTU) = levels(as.factor(RRA2$Species))
-MOTU = MOTU %>% mutate_at(vars(`Grants gazelle`:Buffalo), funs(ifelse(.>0,1,0)))
+MOTU = MOTU %>% mutate_at(vars(Pos:NTC), funs(ifelse(.>0,1,0)))
 MOTU$Hosts = rowSums(MOTU)
-MOTU$MOTU = names(RRA2)[15:189]
+MOTU$MOTU = names(RRA2)[15:153]
+MOTU$Hosts = as.numeric(MOTU$Hosts)
 
 ggplot(MOTU, aes(x=Hosts, y=reorder(MOTU,Hosts)))+
-geom_jitter(width=0.1,height=0.1,alpha=0.5)+
-scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))
+geom_jitter(width=0.1,height=0.1,alpha=0.5)
+#scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))
 
 hstct = data.frame(host = names(colSums(MOTU[,-c(20,21)])), count=colSums(MOTU[,-c(20,21)]))
 ggplot(hstct, aes(x=count, y=reorder(host,count)))+
@@ -1074,6 +1124,39 @@ names(MPdata)
 MPdata_noEle = MPdata[MPdata$Species!="Elephant",]
 MPdata_noEle[20,] # strange waterb
 MPdata_ok = MPdata_noEle[-20,]
+
+ordMR44 = metaMDS(MPdata_tt3[,15:581],autotransform = T, binary=T, k=2)
+plot(ordMR44)
+ordat = data.frame(Species = MPdata_tt3$Species, x=ordMR44$points[,1], y=ordMR44$points[,2], sampleID = MPdata_tt3$Sample_ID)
+ordatblank = ordat[which(ordat$Species=="Blank"),]
+ordatblank$number = as.numeric(gsub("Blank","",ordatblank$sampleID))
+
+levels(ordat$Species)
+
+ggplot(ordat, aes(x=x, y=y))+
+  geom_point(aes(col=Species), size=3)+
+  scale_color_manual(values=animal_colors)+
+  theme_bw(base_size=14)+
+  scale_x_continuous(limits=c(-0.6,2))
+
+platecolor = c(rep("red",12),rep("orange",12),rep("yellow",12),rep("yellowgreen",12),rep("green",12),rep("lightblue",12),rep("blue",12), rep("violet",12), rep("magenta",12), rep("black",12))
+ordatblank$number = as.factor(as.character(ordatblank$number))
+ordatblank$number = factor(ordatblank$number, levels=paste(seq(1,120)))
+
+ggplot(ordatblank, aes(x=x, y=y))+
+  geom_point(aes(col=number), size=5)+
+  geom_text(aes(label = number), size=2)+
+ # scale_color_manual(values=animal_colors)+
+  scale_color_manual(values=platecolor)+
+  theme_bw(base_size=14)+
+  scale_x_continuous(limits=c(-0.6,2))+
+  guides(col=F)
+
+which(ordat$Species == "PositiveControl")
+
+MPdata = MPdata[-which(is.na(MPdata$MOTU_1)),]
+ordMRC = metaMDS(MPdata[,15:153], k=3, binary=T, distance = "jaccard", trymax=100)
+
 ordMRC = metaMDS(MPdata_ok[,15:189], k=3, binary=T, distance="jaccard", noshare=T, trymax=100, trace=0)
 ordMRC$converged
 
@@ -1091,7 +1174,7 @@ ordLONG$converged
 ordLONG=metaMDS(LONGdata[,6:148], binary=T, k=3, noshare=T, trymax=100,previous.best=ordLONG,trace=0)
 
 # takes some time
-ord = metaMDS(RRA_present[15:189], distance="jaccard",binary=T, k=3, noshare=T, trymax=100, trace=0)
+ord = metaMDS(RRA_present[15:153], distance="jaccard",binary=T, k=3, noshare=T, trymax=100, trace=0)
 ord$converged
 ord = metaMDS(RRA_present[15:189], distance="jaccard",binary=T, k=3, noshare=T, trymax=100, trace=0, previous.best = ord)
 ```
@@ -1114,14 +1197,14 @@ plot(ord)
 ```{r}
 # Construct data frames with this information
 names(MPdata_ok)
-envMRC=MPdata_ok[,c(3,4)]
+envMRC=MPdata[,c(3,4)]
 # check NAs
 envMRC$Period[which(is.na(envMRC$Period))]
 
 # Conduct a factor fit of species and sampling period
-factorfit(ordMRC$points,envMRC,1000) #crashed
+factorfit(ordMRC$points,envMRC,1000) #
 # Using adonis methods
-MRCdist = vegdist(MPdata_ok[,15:189], distance="jaccard")
+MRCdist = vegdist(MPdata[,15:153], distance="jaccard")
 MRCdiv = adonis2(MRCdist ~ Species+Period,  data=envMRC, permutations=999, method="jaccard")
 MRCdiv
 # Different R2 values and period is less important than in factorfit.
@@ -1141,7 +1224,7 @@ LONGdiv$Df
 
 
 # all data
-ALLdist = vegdist(RRA_present[,15:189], distance="jaccard")
+ALLdist = vegdist(RRA_present[,15:153], distance="jaccard")
 envALL = RRA_present[,c(2,3)]
 ALLdiv=adonis2(ALLdist ~ Species*Location, data=envALL, permutations=999, method="jaccard")
 ALLdiv
@@ -1477,8 +1560,8 @@ Could also look at specific MOTUs or MOTUs grouped by family.
 motu_wts = as.data.frame(ord$species)
 motu_wts$MOTU =row.names(motu_wts)
 names(motu_wts)
-merge(motu_wts, MOTU[,c(20:22,24)])
-motu_wts = unique(left_join(motu_wts, MOTU[,c(20:22,24)]))
+merge(motu_wts, MOTU[,c(25:27,29)])
+motu_wts = unique(left_join(motu_wts, MOTU[,c(25:27,29)]))
 motu_wts$name= motu_wts$name2
 #View(motu_wts)
 motu_wts$name = as.factor(motu_wts$name)
@@ -1502,7 +1585,7 @@ plotMDSMRC2$species = factor(plotMDSMRC2$species, levels=levels(reorder(RRA2$Spe
 MDSdf$species = factor(MDSdf$species, levels =levels(plotMDSMRC2$species))
 
 levels(as.factor(plotMDSMRC2$species))
-levels(plotMDSMRC2$colors)= c("dodgerblue", "magenta3","green3","maroon1", "maroon3", "maroon", "dodgerblue3",  "deepskyblue3", "dodgerblue4","gold3", "cadetblue1", "greenyellow", "green4", "deepskyblue","lightsteelblue3",  "gold", "darkorchid4", "lightskyblue2", "darkorchid1")
+levels(plotMDSMRC2$colors)= c("red","blue","gray","dodgerblue", "magenta3","green3","maroon1", "maroon3", "maroon", "dodgerblue3",  "deepskyblue3", "dodgerblue4","gold3", "cadetblue1", "greenyellow", "green4", "deepskyblue","lightsteelblue3",  "gold", "darkorchid4", "lightskyblue2", "darkorchid1","gray90","gray70")
 
 ggplot(plotMDSMRC2, aes(x=species, y=x1))+
   geom_point(color=as.character(plotMDSMRC2$colors))
@@ -1533,7 +1616,7 @@ psitecent %>%
 
 
 # without weird points
-weirdvec = which((MDSdf$species=="Buffalo" & MDSdf$x1>0)|(MDSdf$species == "Hippo" & MDSdf$x1 >-1) )
+weirdvec = which((MDSdf$species=="Buffalo" & MDSdf$x2>0.5)|(MDSdf$species == "Hippo" & MDSdf$x1 >-1) )
 weirdvec
 
 psitecent %>%

@@ -89,6 +89,8 @@ ggplot(samp_summary2, aes(x=reorder(Species,-prevalence), y=prevalence))+
 
 ```
 
+#### Difference between these
+
 ```{r}
 
 sum(samp_summary2$positive)-sum(samp_summary$positive)
@@ -97,9 +99,9 @@ samp_summary2$pct_diff = samp_summary2$difference/samp_summary2$tested*100
 
 ggplot(samp_summary2, aes(x=reorder(Species,-prevalence), y=pct_diff))+
   geom_col(aes(fill=Species))+
-  geom_text(aes(label=tested), nudge_y=1, size=3)+
+  geom_text(aes(label=difference), nudge_y=1, size=3)+
   guides(fill=F)+
-  labs(x="Species",y="Percent Change",title="Difference between prevalence measures (numbers reflect total tested)")+
+  labs(x="Species",y="Percent Change",title="Difference between prevalence measures (numbers reflect number removed)")+
   theme_bw()+
   theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0))+
   scale_fill_sjplot(palette="aqua")
@@ -115,9 +117,9 @@ One thing that I did find from the first round was that some of the samples with
 
 ```{r}
 
-head(samp_filt)
+#head(samp_filt)
 
-str(samp_filt)
+#str(samp_filt)
 samp_filt$rd_2_qpcr_mean_ct=as.numeric(samp_filt$rd_2_qpcr_mean_ct)
 samp_filt$rd_total_reads_2=as.numeric(samp_filt$rd_total_reads_2)
 
