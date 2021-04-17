@@ -1,0 +1,2139 @@
+---
+title: "MOTU_analysis_2020_g99_Mpala"
+author: "Georgia Titcomb"
+date: "July 13, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(vegan)
+library(GUniFrac)
+library(sjPlot)
+library(readxl)
+library(ggConvexHull)
+library(igraph)
+library(phylosignal)
+library(adephylo)
+library(ape)
+library(phylobase)
+library(philentropy)
+library(ComplexHeatmap)
+library(lmerTest)
+library(emmeans)
+library(glmmTMB)
+library(DHARMa)
+library(MuMIn)
+library(picante)
+library(NetworkExtinction)
+library(msa)
+library(adegenet)
+library(phyloseq)
+library(QsRutils)
+library(phangorn)
+library(seqinr)
+library(bipartite)
+library(MCMCglmm)
+
+
+```
+
+## 1. Import data and finish filtering
+
+### 1.1 Setup and visualization
+```{r}
+# read in data
+OTUtab <- read.csv("allMOTUs_sumatra99_GTmethod2020.csv")
+dim(OTUtab)
+
+# sequencing depth
+median(rowSums(OTUtab[,-c(1,1703,1704)])) 
+mean(rowSums(OTUtab[,-c(1,1703,1704)]))
+hist(rowSums(OTUtab[,-c(1,1703,1704)]))
+
+# Remove samples with reads = 0
+OTUtabsmall <- OTUtab[-which(rowSums(OTUtab[,-c(1,1703,1704)])==0),]
+dim(OTUtabsmall)
+
+#weirdIDS = slist99[which((slist99$Sample_ID %in% RRA_present$Sample_ID)==F),]$Sample_ID
+#OTUtabsmall[OTUtabsmall$X %in% weirdIDS,]
+```
+
+### 1.2 Filtering and rarefaction
+
+```{r}
+
+# Remove samples with reads<1000. 
+OTUtabsmall <- OTUtab[-which(rowSums(OTUtab[,-c(1,1703,1704)])<1000),]
+
+# now Rarefy
+OTUtabsmall2 = Rarefy(OTUtabsmall[,-c(1,1703,1704)], depth=1000)$otu.tab.rff
+OTUtabsmall2 = as.data.frame(OTUtabsmall2)
+RRAtab = as.data.frame(decostand(OTUtabsmall2, method="total"))
+RRAtab$X = OTUtabsmall$X
+head(RRAtab[,1:10])
+names(RRAtab)%>%tail()
+
+# Filter out >1% RRA
+RRAtab_filt <- RRAtab %>% mutate_at(vars(MOTU_1:MOTU_1701), funs(ifelse(.<0.01,0,.)))
+
+# How many OTUs are now zero?
+length(which(colSums(RRAtab_filt[,1:1701])==0)) # 1264
+
+# Remove those columns
+RRAtab_filt2 <- RRAtab_filt[,-(which(colSums(RRAtab_filt[,1:1701])==0))]
+dim(RRAtab_filt2)
+
+# Currently we have 437 MOTUs in 574 samples
+# rearrange
+RRAtab_filt2 = RRAtab_filt2[,c(438,1:437)]
+names(RRAtab_filt2)[1]="Sample_ID"
+
+
+
+# save a copy
+#write.csv(RRAtab_filt2, "RRAtab_filt2_g99.csv", row.names=F)
+```
+
+
+## 2. Initial richness comparison
+
+### 2.1 Read in and join datasets
+
+```{r}
+RRA_rare <- read.csv("RRAtab_filt2_g99.csv")
+RRA_hosts=read.csv("check_summary.csv")
+
+# Combine MOTU table with host data
+RRA2 = full_join(RRA_hosts, RRA_rare)
+dim(RRA2)
+
+RRA2[which(is.na(RRA2$Location)),] # only one duplicate sample has no associated info
+RRA2=RRA2[-which(is.na(RRA2$Location)),]
+
+# Use only the qPCR prevalence
+RRA2 = RRA2[which(RRA2$rd_2_qpcr_conducted=="Y"),]
+dim(RRA2)
+
+# remove animals not focused on
+#RRA2 = RRA2[-which(RRA2$Species %in% c("Bushbuck","NTC","Goat","Sheep","EC","Oribi")),]
+# All NA values indicate additional zeros
+
+#names(RRA2)
+# select columns of interest
+#RRA2 = RRA2[,c(1:14,16:1180)]
+#head(RRA2)
+
+# Replace NA values with 0 for samples that were undetected
+# This includes things that were not screened
+RRA2 = RRA2 %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(ifelse(is.na(.),0,.)))
+
+# Strange 'hippo'
+RRA2 = RRA2[-which(RRA2$Sample_ID=="MRC_17_HIP_93"),]
+
+dim(RRA2)
+
+```
+
+### 2.2 Calculate MOTU richness
+
+```{r}
+
+# Add MOTU richness for each sample (after rarifying to same reads)
+RRA2$richness = specnumber(RRA2[,30:466])
+
+```
+
+
+```{r}
+
+# Does individual richness vary significantly by species?
+
+#non zeros
+RRA_present = RRA2[which(RRA2$richness>0),]
+dim(RRA_present)
+
+#slist99 = RRA_present
+#slist99[which((slist99$Sample_ID %in% RRA_present$Sample_ID)==F),]%>%View()
+# RRA2 is all data
+# RRA_present is richness > 0 
+
+# set animal colors based on alphabet
+animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
+
+# plot only MPdata
+withzeros = ggplot(RRA2, aes(x=reorder(Species,-richness), y=richness))+
+  geom_jitter(width=0.01,height=0.3, alpha=0.5, aes(color=Species))+
+  geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
+  guides(fill=F,col=F)+
+  theme_bw()+
+  scale_fill_manual(values=animal_colors)+
+  scale_color_manual(values=animal_colors)+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
+  labs(x="Host Species",y="Rarified OTU richness",title="Individual-level Richness (with 0s)")
+
+nozeros = ggplot(RRA_present, aes(x=reorder(Species,-richness,na.rm=T), y=richness))+
+  geom_jitter(width=0.01,height=0.3, alpha=0.5, aes(color=Species))+
+  geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
+  guides(fill=F,col=F)+
+  theme_bw(base_size=16)+
+  scale_fill_manual(values=animal_colors)+
+  scale_color_manual(values=animal_colors)+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
+  labs(x="Host Species",y="Richness",title="Richness")
+
+richgraph = gridExtra::grid.arrange(withzeros, nozeros, ncol=2)
+#ggsave("g98_plots/rich_graph.png", richgraph, device="png")
+
+### Added
+# prevalence graph
+# calculate prevalence with correct errorbars
+# prevalence is not 'overall prev' as that refers to the 98 pct dataset
+RRA2$prev2 = ifelse(RRA2$richness>0,1,0)
+MPdata_prev = RRA2 %>% group_by(Species) %>% summarize_at(vars(prev2), funs(n=n(), pos=sum(.)))
+
+m = RRA2 %>% group_by(Species, rd2_sequenced) %>% summarize_at(vars(prev2), funs(n=n(), pos=sum(.))) %>% filter(rd2_sequenced=="Y") 
+
+
+library(binom)
+MPdata_prev = binom.confint(MPdata_prev$pos, MPdata_prev$n, methods="wilson")%>%cbind(MPdata_prev[,1])
+
+prevalence = ggplot(MPdata_prev, aes(x=reorder(Species, -mean), y=mean))+
+  geom_point(aes(color=Species), size=2)+
+  geom_errorbar(aes(ymin=lower, ymax=upper, color=Species), size=1.2)+
+  guides(col=F)+
+  theme_bw(base_size = 16)+
+  scale_color_manual(values=animal_colors)+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
+  scale_y_continuous(limits=c(0,1))+
+  labs(x="Host Species", y="Prevalence", title="Prevalence")
+
+richgraph = gridExtra::grid.arrange(prevalence, nozeros, ncol=2)
+#ggsave("g99_plots/prev_richgraph_2021.png",richgraph, width=10, height=5, units="in", dpi=300, device="png")
+```
+
+
+### 2.3 Conduct statistical tests of richness by species
+
+```{r}
+
+# fit model
+MPsp = glmmTMB(richness ~ Species, family="poisson", data=RRA_present)  # quasi-poisson
+# diagnostics
+DHARMa::testResiduals(simulateResiduals(MPsp))
+tab_model(MPsp)
+car::Anova(MPsp)
+
+# multiple comparisons
+emmp = emmeans(MPsp, ~Species, data=RRA_present, type="response")
+pairs(emmp, adjust="fdr") %>% as.data.frame() %>% filter(p.value<0.05)
+
+# results
+tab_model(MPsp, transform = NULL, show.stat=T, show.se = T)
+
+
+# Test prevalence
+MPprev = glmmTMB(prev2 ~ Species, data=RRA2, family="binomial")
+tab_model(MPprev) # R2 is 11.6% 
+car::Anova(MPprev)
+
+emmp_prev = emmeans(MPprev, ~Species, type="response")
+pairs(emmp_prev, adjust="fdr")%>%as.data.frame()%>%filter(p.value<0.05)
+
+```
+
+Richness and prevalence clearly vary by species. 66% and 18% of variation in richness and prevalence is explained by species. Richness: $\chi^2_{17} = 258.86, p < 0.001$; Prevalence: $\chi^2_{17} = 64.85, p < 0.001$.
+
+### Richness and prevalence and host characteristics
+
+```{r}
+# Richness 
+
+# Fit a model with a species term (includes zeros - quasipoisson)
+RRA2$phylo=RRA2$MSW93_Binomial
+
+# Exclude camel and hippo as they are pseudoruminants
+RRA2_noCH = RRA2[-which(RRA2$Species %in% c("Camel","Hippo")),]
+dim(RRA2_noCH)
+
+# Make another positives-only version for richness
+RRA2_noCH_pos = RRA2_noCH[which(RRA2_noCH$richness>0),]
+dim(RRA2_noCH_pos)
+
+# format tree
+tree = read.tree("mammaltree.txt")
+inv.phylo = inverseA(tree, nodes="TIPS", scale=T) # decide all or tips
+
+# set prior for poisson
+prior_pois = list(G=list(G1=list(V=1,nu=0.02),G2=list(V=1,nu=0.02)), R=list(V=1,nu=0.02))
+
+# format data correctly
+MPrichinfoMCMC = as.data.frame(RRA2_noCH_pos)
+MPrichinfoMCMC$animal = MPrichinfoMCMC$Sample_ID
+MPrichinfoMCMC$phylo = MPrichinfoMCMC$MSW93_Binomial
+MPrichinfoMCMC = as.data.frame(MPrichinfoMCMC)
+
+# Fit model
+set.seed(123)
+model_rich = MCMCglmm(richness ~ Diet + Feeding_Type +log(Body_Mass_kg)+ log(SocialGrpSize)+ log(HomeRange_km2), random= ~ phylo + MSW93_Binomial, family = "poisson", ginverse=list(phylo=inv.phylo$Ainv), prior=prior_pois, data=MPrichinfoMCMC, nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
+
+# check autocorrelation
+autocorr(model_rich$Sol)
+autocorr(model_rich$VCV) 
+
+# assess model
+summary(model_rich)
+plot(model_rich)
+
+# Lambda details
+lambda = model_rich$VCV[,'phylo']/
+ (model_rich$VCV[,'phylo']+model_rich$VCV[,'units']+model_rich$VCV[,'MSW93_Binomial'])
+posterior.mode(lambda)
+mean(lambda)
+HPDinterval(lambda)
+
+# model selection
+MCMCglmm.updateable = updateable(MCMCglmm)
+set.seed(123)
+model_richt = MCMCglmm.updateable(richness ~ Diet + Feeding_Type + log(Body_Mass_kg) + log(SocialGrpSize) + log(HomeRange_km2), random= ~phylo + MSW93_Binomial, family = "poisson", ginverse=list(phylo=inv.phylo$Ainv), prior=prior_pois, data=MPrichinfoMCMC, nitt=10000, burnin=5000, thin=50, verbose=F, pl=T)
+drt = dredge(model_richt, rank="DIC")
+drt
+
+# Diet model
+set.seed(123)
+model_simple2 = MCMCglmm(richness ~Diet, random= ~phylo + MSW93_Binomial, family = "poisson", ginverse=list(phylo=inv.phylo$Ainv), prior=prior_pois, data=MPrichinfoMCMC, nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
+
+# assess model
+summary(model_simple2)
+
+# lambda details
+lambda = model_simple2$VCV[,'phylo']/
+ (model_simple2$VCV[,'phylo']+model_simple2$VCV[,'units']+model_simple2$VCV[,'MSW93_Binomial'])
+mean(lambda)
+HPDinterval(lambda)
+
+
+# sanity check
+rmod = glmmTMB(richness ~ Diet + (1|MSW93_Binomial), family="poisson", data=MPrichinfoMCMC)
+summary(rmod)
+
+rmodem = emmeans(rmod, ~Diet, type="response")
+rmodem
+
+```
+
+### Prevalence
+
+```{r}
+
+#################################
+###### Prevalence
+head(RRA2_noCH)
+
+# advice from https://r-sig-mixed-models.r-project.narkive.com/I9vUTpvM/r-sig-me-rare-binary-outcome-mcmcglmm-and-priors
+prior_binom = list(R = list(V = 1, fix = 1), B = list(mu = c(rep(0,7)), V = diag(7)*(4.3+pi^2/3)),
+G = list(G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000),G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000)))
+
+# format data correctly
+MPrichinfoMCMC = as.data.frame(RRA2_noCH)
+MPrichinfoMCMC$animal = MPrichinfoMCMC$Sample_ID
+MPrichinfoMCMC$phylo = MPrichinfoMCMC$MSW93_Binomial
+MPrichinfoMCMC = as.data.frame(MPrichinfoMCMC)
+dim(MPrichinfoMCMC)
+
+
+# fast version
+MCMCglmm.updateable = updateable(MCMCglmm)
+set.seed(0)
+modt = MCMCglmm.updateable(fixed = prev2 ~ Diet + Feeding_Type + log(Body_Mass_kg) + log(SocialGrpSize) + log(HomeRange_km2),
+                           random = ~phylo + MSW93_Binomial,
+                           ginverse = list(phylo = inv.phylo$Ainv),
+                           data = MPrichinfoMCMC,
+                           family = "categorical",
+                           prior = prior_binom,
+                           nitt = 500000, burnin = 10000, thin = 250,
+                           verbose = F, pl = T) 
+summary(modt)
+
+# body mass and diet are potential coefs
+prior_binom1 = list(R = list(V = 1, fix = 1),
+                    B = list(mu = c(rep(0,4)), V = diag(4)*(4.3+pi^2/4)),
+                    G = list(G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000),
+                        G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000)))
+set.seed(0)
+mod0.1 = MCMCglmm.updateable(fixed = prev2 ~ Diet + log(Body_Mass_kg),
+                           random = ~phylo + MSW93_Binomial,
+                           ginverse = list(phylo = inv.phylo$Ainv),
+                           data = MPrichinfoMCMC,
+                           family = "categorical",
+                           prior = prior_binom1,
+                           nitt = 10000, burnin = 5000, thin = 50,
+                           verbose = F, pl = T) 
+summary(mod0.1)
+
+# compare DIC value to model without body mass
+
+prior_binom2 = list(R = list(V = 1, fix = 1),
+                    B = list(mu = c(rep(0,3)), V = diag(3)*(4.3+pi^2/3)),
+                    G = list(G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000),
+                        G1 =list(V = 1, nu = 0.002, alpha.mu = 0, alpha.V = 1000)))
+# reduced
+set.seed(0)
+mod0.2 = MCMCglmm(fixed = prev2 ~ Diet,
+                  random = ~ phylo + MSW93_Binomial,
+                  data = MPrichinfoMCMC,
+                  family = "categorical",
+                  prior = prior_binom2,
+                  ginverse=list(phylo=inv.phylo$Ainv),
+                  nitt=500000, burnin=10000, thin=250,
+                  verbose=F, pl=T) 
+
+
+# check autocorrelation
+autocorr(mod0.2$Sol)
+autocorr(mod0.2$VCV) 
+
+summary(modt)
+summary(mod0.2)
+mod0.2$DIC; mod0.1$DIC # simpler model is better
+plot(modt)
+plot(mod0.2)
+
+
+# Lambda details
+lambda0 = modt$VCV[,'phylo']/
+ (modt$VCV[,'phylo']+modt$VCV[,'units']+modt$VCV[,'MSW93_Binomial'])
+
+mean(lambda0)
+posterior.mode(lambda0)
+HPDinterval(lambda0)
+
+lambda = mod0.2$VCV[,'phylo']/
+ (mod0.2$VCV[,'phylo']+mod0.2$VCV[,'MSW93_Binomial']+mod0.2$VCV[,'units'])
+
+posterior.mode(lambda)
+mean(lambda)
+HPDinterval(lambda)
+
+# compare estimages to GLMM for sanity check -- they are not too far off
+dim(MPrichinfoMCMC) # should be 495
+
+model = glmmTMB(prev2 ~ Diet + Feeding_Type + log(Body_Mass_kg) + log(SocialGrpSize)+ log(HomeRange_km2)+ (1|MSW93_Binomial), family="binomial", data=MPrichinfoMCMC)
+summary(model)
+model = glmmTMB(prev2 ~ Diet + (1|MSW93_Binomial), family="binomial", data=MPrichinfoMCMC)
+summary(model)
+
+emglmm = emmeans(model, ~ Diet, type="response")
+pairs(emglmm)
+```
+
+```{r}
+## Raw data and plotting
+MPprev = RRA2_noCH %>% group_by(Diet, Feeding_Type) %>% summarize_at(vars(prev2), funs(n=n(), pos=sum(.)))
+
+#library(binom)
+MPprev = binom.confint(MPprev$pos, MPprev$n, methods="wilson")%>%cbind(MPprev[,1:2])
+
+MPprev$Diet=factor(MPprev$Diet, levels=c("G","M","B"))
+MPdata_prev2 = unique(left_join(as.data.frame(MPdata_prev), dplyr::select(RRA2, Species, Diet, Feeding_Type), by="Species"))
+levels(as.factor(MPdata_prev2$Feeding_Type))
+levels(as.factor(MPdata_prev2$Species))
+
+
+MPdata_prev2 = MPdata_prev2[-which(MPdata_prev2$Species %in% c("Camel","Hippo","Hybrid zebra")),]
+
+MPprev$Diet = factor(MPprev$Diet, levels=c("B","M", "G"))
+MPdata_prev2$Diet = factor(MPdata_prev2$Diet, levels=c("B","M","G"))
+
+prevplotgp = ggplot(MPprev, aes(x=Diet, y=mean))+
+  geom_errorbar(data=MPdata_prev2, aes(x=Diet, y=mean, ymin=lower, ymax=upper, color=Species), size=0.9, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
+  geom_point( position=position_dodge(width=0.75), size=2, shape=1)+
+  geom_errorbar(aes(ymin=lower, ymax=upper),position=position_dodge(width=0.75), size=1.2, col="gray50")+
+  theme_bw(base_size=16)+
+  labs(x="Diet", y="Prevalence", title="Prevalence")+
+  scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  scale_y_continuous(limits=c(0,1))+
+  facet_wrap(~Feeding_Type, scales="free_x")+guides(col=F)
+  
+
+# same for richness
+RRA2_noCH_pos$Diet=factor(RRA2_noCH_pos$Diet, levels=c("B","M","G"))
+
+richplotgp = ggplot(RRA2_noCH_pos, aes(x=Diet, y=richness))+
+  geom_boxplot(data=RRA2_noCH_pos, aes(x=Diet, y=richness,color=Species), size=0.7, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
+  geom_boxplot(col="gray50", fill=NA, size=1)+
+  theme_bw(base_size=16)+
+  labs(x="Diet", y="Richness", title="Richness (no 0s)")+
+  scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  scale_y_continuous(limits=c(0,18))+
+  facet_wrap(~Feeding_Type, scales="free_x")+guides(col=F)
+
+gpplots = gridExtra::grid.arrange(prevplotgp, richplotgp, ncol=2)
+
+#ggsave("g99_plots/gpplots_2021.png",gpplots, device="png", dpi=300, width=10, height=5, units="in")
+```
+
+## 3, Comparing host range among MOTUs
+
+## 3, Comparing host range among MOTUs
+
+```{r}
+# ADD up RRA for each species?
+MOTU = RRA2 %>% group_by(Species) %>%
+  summarize_at(vars(MOTU_1:MOTU_1677),funs(mean(.))) %>%
+  as.data.frame()%>%
+  .[,-1] %>%
+  t()%>%
+  as.data.frame()
+
+names(MOTU) = levels(as.factor(RRA2$Species))
+
+# Binarize
+MOTU = MOTU %>% mutate_at(vars(Buffalo:Waterbuck), funs(ifelse(.>0,1,0)))
+MOTU$Hosts = rowSums(MOTU)
+MOTU$MOTU = names(dplyr::select(RRA2, MOTU_1:MOTU_1677))
+
+ggplot(MOTU, aes(x=Hosts, y=reorder(MOTU,Hosts)))+
+geom_jitter(width=0.1,height=0.1,alpha=0.5)+
+scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))
+
+hstct = data.frame(host = names(colSums(MOTU[,-c(19,20)])), count=colSums(MOTU[,-c(19,20)]))
+ggplot(hstct, aes(x=count, y=reorder(host,count)))+
+  geom_jitter()
+
+
+MOTU_long = MOTU %>% pivot_longer(cols=Buffalo:Waterbuck, names_to="Host", values_to="link")
+MOTU_long = left_join(MOTU_long, RRA2[,c(3,26)], by=c("Host"="Species"))
+head(MOTU_long)
+
+```
+
+
+```{r}
+# bring in MOTU information
+#motuinfo2 = read.delim("nematodes_2018_assembled_setid_filterE2_nl_uniq_c10_ann_assignEMBL_nematoda_sumatra_sumaclust_assignedR134.tab")
+motuinfo = read.csv("NEW_TAXA_sequences_80.csv")
+# These have the same dimension, but for some reason, I am not getting the same MOTUs back when I mess with the names. I need to spend some time looking into this issue.
+head(motuinfo)
+motu99 = data.frame(cluster = (motuinfo$cluster_sumatra99), family_j=motuinfo$family_name_ok, name_j=motuinfo$scientific_name_ok, order_g = motuinfo$Order, family_g = motuinfo$Genus, name_g = motuinfo$unknown)
+
+motu99 = unique(motu99)
+
+motu99$MOTU = paste("MOTU_",motu99$cluster, sep="")
+motu99
+
+# rerun MOTU code before running this
+MOTU = left_join(MOTU, motu99, by="MOTU")
+
+# create a grouping variable to color by parasite family
+MOTU$name2 = MOTU$family_g
+MOTU$name2 = as.character(MOTU$name2)
+MOTU2 = dplyr::select(MOTU, MOTU, name2, Hosts)%>%unique()
+
+# remove duplicates and missing
+MOTU2 = MOTU2[order(MOTU2$name2),]
+MOTU2 = MOTU2[-which(is.na(MOTU2$name2) & duplicated(MOTU2$MOTU)),]
+
+# Some IDs are missing, so we can use the previous ID
+missing = MOTU2[which(is.na(MOTU2$name2)),]$MOTU
+MOTU[which(MOTU$MOTU %in% missing),]%>%dplyr::select(MOTU, name_j)%>%unique()
+
+
+# use original IDs
+singles = motu99[which(motu99$MOTU%in%missing),] %>% group_by(MOTU) %>% summarize(n=n()) %>%
+  filter(n==1)
+
+dfmiss = data.frame(MOTU=singles$MOTU, newname=motu99$name_j[motu99$MOTU %in% singles$MOTU])
+
+others = motu99[which(motu99$MOTU%in%missing),] %>% group_by(MOTU) %>% summarize(n=n()) %>%
+  filter(n>1)
+
+# families
+add_df = data.frame(MOTU=others$MOTU, newname=c("Strongyloidea", "Strongyloidea", "Strongyloidea", "Strongyloidea", "Strongyloidea", "Strongyloidea", "Ancyclostomatidae", "Ancyclostomatidae", "Ancyclostomatidae", "Trichostrongylidae"))
+dfmiss=rbind(dfmiss, add_df)
+
+MOTU2[which(is.na(MOTU2$name2)),]$name2 = dfmiss$newname
+
+# Drop name_j and regroup
+MOTU2 = dplyr::select(MOTU2, MOTU, name2, Hosts)%>%unique()
+
+# check levels
+levels(as.factor(MOTU2$name2))
+
+# clean up levels
+MOTU2$name2 = as.factor(MOTU2$name2)
+levels(MOTU2$name2) = c("Ancyclostomatidae (hookworms)", "Ancyclostomatidae (hookworms)", "Chabertiidae (nodular worms)","Cooperiidae (cooperia)", "Haemonchidae (barber pole worms)","Ancyclostomatidae (hookworms)", "Protostrongylidae (lungworms)", "Strongylida (order)", "Strongylidae (strongyles)", "Strongyloidea (superfamily)", "Trichostrongylidae (trichostrongyles)", "Trichostrongylidae (trichostrongyles)")
+levels(MOTU2$name2)
+# reorder levels
+MOTU2$name2 = factor(MOTU2$name2, levels=c("Ancyclostomatidae (hookworms)", "Chabertiidae (nodular worms)", "Cooperiidae (cooperia)", "Haemonchidae (barber pole worms)", "Trichostrongylidae (trichostrongyles)", "Protostrongylidae (lungworms)", "Strongylidae (strongyles)", "Strongyloidea (superfamily)", "Strongylida (order)"))
+
+
+# exclude 0s
+MOTU2 = MOTU2[-which(MOTU2$Hosts==0),]%>% unique()
+
+# now reorder MOTUs based on Hosts AND name2
+MOTU2 = MOTU2[order(MOTU2$name2, MOTU2$Hosts),] # this should be the correct order
+MOTUorder = unique(MOTU2$MOTU)
+MOTU2$MOTU = factor(MOTU2$MOTU, levels=MOTUorder)
+
+psite_distribution = ggplot(MOTU2[-which(MOTU2$name2=="Strongylida (order)"),], aes(x=Hosts, y=MOTU))+
+  geom_point(aes(col=name2), size=1.6)+
+  geom_line(aes(col=name2, group=name2), size=1)+
+  scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))+
+  scale_y_discrete(labels=NULL)+
+  #theme_classic(base_size = 14)+
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_blank(),
+        axis.line=element_line(color="gray"),
+        text= element_text(size=14),
+        axis.text.x = element_text(size=14))+
+  guides(col=F)+
+  facet_wrap(~name2, nrow=7, scales="free_y")+
+  labs(x="Number of Host Species", y="mOTU ID")
+psite_distribution
+#ggsave("g99_plots/psite_host_distribution2.png", psite_distribution, device="png", width=3, height=12)
+
+
+### Not needed
+# now reorder MOTUs based on Hosts AND name2
+# MOTU2 = MOTU2[order(MOTU2$Hosts, MOTU2$name2),] # this should be the correct order
+# MOTUorder = unique(MOTU2$MOTU)
+# MOTU2$MOTU = factor(MOTU2$MOTU, levels=MOTUorder)
+# 
+# ggplot(MOTU2, aes(x=Hosts, y=MOTU))+
+#   geom_jitter(width=0.1,height=0.1,alpha=0.5, aes(color=name2), size=2)+
+#   scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))+
+#   scale_y_discrete(labels=NULL)+
+#   theme_light(base_size=14)
+# 
+# 
+# 
+# 
+# # now reorder MOTUs based on Hosts AND name2
+# 
+# psitedist = ggplot(MOTU2[-which(MOTU2$Hosts==0),], aes(x=Hosts, y=reorder(MOTU,Hosts)))+
+# geom_jitter(width=0.1,height=0.1,alpha=0.5, aes(col=name), size=2)+
+# scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))+
+#   theme_bw()+
+#   labs(y="Parasite MOTU ID", x="Number of Host Species", color="Parasite Family")+
+#   theme(axis.text.y=element_blank())
+# psitedist
+# #ggsave("g98_plots/psite_host_distribution.png", psitedist, device="png")
+
+hist(MOTU2$Hosts[which(MOTU2$Hosts>0)])
+mtudisvec = MOTU2$Hosts[which(MOTU2$Hosts>0)]
+length(which(mtudisvec==1))/length(mtudisvec) # 57% have 1 host species
+length(which(mtudisvec>7))/length(mtudisvec)
+MOTU[which(MOTU$Hosts==10),] # Cooperia again
+max(mtudisvec)
+
+```
+
+
+## 4. Sequence-sequence relationships
+
+### 4.1 Subset the sequence data to the filtered MOTUs
+
+```{r}
+# Streamlined make_fasta script pasted below:
+# note that this was constructed using all our data. I reasoned that it was better to use more data than less
+
+# first get the list of MOTUs of interest
+motunames = read.csv("RRAtab_filt2_g99.csv")
+
+# now get the corresponding sequences
+seqs = read.delim("nematodes_2018_assembled_setid_filterE2_nl_uniq_c10_ann_assignEMBL_nematoda_sumatra_sumaclust_assignedR134.tab")
+
+# trim dataframe
+seqsmall = seqs[,c(1,8,9,18,22,27,28)]
+seqsmall$MOTU = paste("MOTU_",seqsmall$cluster_sumatra99, sep="")
+
+# find corresponding sequences
+relevant_seqs = seqsmall[which(seqsmall$MOTU %in% names(motunames)[-1]),]
+dim(relevant_seqs)
+dim(seqsmall)
+
+# now select the most abundant sequence for each MOTU
+topseq = relevant_seqs %>% group_by(MOTU) %>% top_n(1, count)
+
+# add taxa info
+topseq = left_join(topseq, seqs[,18:28])
+
+# now use only these sequences
+# make a subset
+myfasta= read.fasta(file = "nematode.fasta", seqtype = "AA",as.string = TRUE, set.attributes = FALSE)
+
+my_fasta_sub = myfasta[names(myfasta) %in% topseq$id]
+
+# save subset
+#write.fasta(sequences = my_fasta_sub, names = names(my_fasta_sub), nbchar = 80, file.out = "nem_subset99.fasta")
+
+```
+
+### 4.2 Combine host and sequence data for later plotting
+
+```{r}
+# find the animal that is most common for each motu
+head(RRA2)
+
+RRAagg = RRA2 %>% group_by(Species) %>% summarize_at(vars(MOTU_1:MOTU_1677), funs(mean))
+
+# which species has the highest relative frequency for each MOTU?
+specs = unlist(apply(RRAagg[,-1], 2, which.max))
+specieslink = RRAagg$Species[specs]
+
+
+# how about if the tip label is the number of species?
+RRA2_bin = RRA2[,-c(1:29)] %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(ifelse(.>0,1,0)))
+RRA2_bin$Species = RRA2$Species
+
+# use only positives because high prev species overall will bias
+RRA2_bin_present = RRA2_bin[-which(rowSums(RRA2_bin[,-c(438:439)])==0),]
+RRA2_binagg = RRA2_bin_present %>% group_by(Species) %>% summarize_at(vars(MOTU_1:MOTU_1677), funs(mean))
+numberhost = RRAagg[,-1] %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(ifelse(.>0,1,0))) %>% colSums()
+binnumberhost = RRA2_binagg[,-1] %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(ifelse(.>0.0,1,0))) %>% colSums()
+
+```
+
+### 4.3 Align sequences and create tree
+
+```{r}
+# ClustalOmega appeared to make the most parsimonious trees
+align<-msaClustalOmega('nem_subset99.fasta',type="dna",order="input") #this takes a minute
+
+#align<-msaClustalW("nem_subset99.fasta",type="dna", order="input") #this takes a while
+
+# why is the order for this messed up?!?!
+
+aldna<-as.DNAbin(align) #all sequences have the same length
+dna = fasta2DNAbin(file="nem_subset99.fasta") # takes a little while
+
+tips<-rownames(dna)
+rownames(align)<-tips
+rownames(aldna)<-tips
+dnaphydatAll<-phyDat(aldna, type="DNA", levels=NULL)
+
+# compare models -- this takes quite a while
+mt2 = modelTest(dnaphydatAll, model=c("JC69","K80","F81", "K81", "F84","T92" ,"TN93", "GG95", "LOGDET", "BH87" ,"PARALIN", "N" ,"TS" ,"TV", "INDEL", "INDELBLOCK"))
+
+min(mt2$BIC)
+which.min(mt2$BIC)
+mt2[12,] # K81+G+I is the best out of the options available for dist.dna
+
+#top 10 overall:
+mt2[order(mt2$BIC),][1:10,]
+
+env<-attr(mt2, "env")
+ls(envir=env)
+(fit<-eval(get("K81+G+I", env), env))
+
+dna_distbest<-dist.dna(aldna, model="K80", gamma=T, as.matrix = T) #note, gamma correction not available for K81
+# based on the BIC values, K80 with gamma is better than K81 without
+
+DistMatrixK80<-as.matrix(dna_distbest)
+max(DistMatrixK80) # 0.65 is very high; muscle algorithm brings this to 84! 0.46 with omega
+
+dna_distK81<-dist.dna(aldna, model="K81") #note, gamma correction not available for K81
+DistMatrixK81<-as.matrix(dna_distK81)
+max(DistMatrixK81) # 0.45
+
+DistMatrix_raw<-as.matrix(dist.dna(aldna, model="raw"))
+max(DistMatrix_raw)#0.33
+
+hist(DistMatrix_raw, breaks=100)
+hist(DistMatrixK80, breaks=50)
+hist(DistMatrixK81, breaks=100)
+
+treeNJ<-NJ(dna_distbest)
+treeNJ2 = NJ(dna_distK81)
+treeUPGMA<-upgma(dna_distbest)
+treeUPGMA2=upgma(dna_distK81)
+parsimony(treeNJ, dnaphydatAll)
+parsimony(treeUPGMA, dnaphydatAll)
+parsimony(treeNJ2, dnaphydatAll)
+parsimony(treeUPGMA2, dnaphydatAll)
+# NJ slightly more parsimonious
+
+treeNJ<-ladderize(treeNJ)
+treeNJ2=ladderize(treeNJ2)
+treeUPGMA = ladderize(treeUPGMA)
+par(mfrow=c(1,2))
+plot(treeNJ, cex=0.6, show.tip=T)
+plot(treeNJ2, cex=0.6, show.tip=T)
+
+# these look very similar to me
+# save best tree
+#write.tree(treeNJ, file="g99_treeNJ_K80_gamma") # open this using dendro program and save as new newick file to convert negative branch lengths
+#write.tree(treeUPGMA, file="g99_treeUPGMA_K80_gamma")
+```
+
+### 4.4 Plot tree with metadata
+
+```{r}
+#Plotting with metadata
+
+#treeNJ$tip.label
+
+splink = data.frame(species=specieslink, richness = binnumberhost, MOTU=names(RRAagg[-1]))
+ttlab = data.frame((topseq$MOTU[which(topseq$id %in% treeNJ$tip.label)]))
+ttlab =topseq[which(topseq$id %in% treeNJ$tip.label),]
+names(ttlab)[2]="MOTU"
+ttlab$MOTU = paste("MOTU",ttlab$MOTU, sep="_")
+ttlab=as.data.frame(ttlab)
+ttlab = left_join(ttlab[,c(1,2,5,6,7,8)], splink, by=c("MOTU"))
+
+myPal <- colorRampPalette(c("red","yellow","green","blue"))
+
+# phylogeny colored by nem taxonomy
+par(mfrow=c(1,1))
+plot(treeNJ,show.tip=F)
+tiplabels(ttlab$scientific_name_ok, cex=0.5, col=transp(num2col(ttlab$bid_ok*100, col.pal=myPal), 0.7), frame="n", offset=0.0)#0.02
+temp=pretty(min(ttlab$bid_ok*100):max(ttlab$bid_ok*100),5)
+legend("bottomleft",fill=transp(num2col(temp, col.pal=myPal),.7),leg=temp, ncol=1, cex=0.7, title="best identity score")
+
+# phylogeny colored by core host
+plot(treeNJ, cex=0.6, show.tip=F, align.tip.label=F, label.offset=0.005)
+tiplabels(ttlab$species, cex=0.5, frame="n", col=transp(num2col(ttlab$richness, col.pal=myPal), 0.7), offset=0.005)
+temp <- c(1,2,3,5,10)
+legend("topright", fill=transp(num2col(temp, col.pal=myPal),.7), leg=c(1,2,3,5,10), ncol=1, cex=0.7)
+
+
+```
+
+### 4.5 Create phyloseq object and find Unifrac Distances
+
+#### 4.5.i Individual-level (samples)
+
+```{r}
+### need to make a phyloseq object
+head(motunames)
+motunames = read.csv("RRAtab_filt2_g99.csv")
+
+treeNJ$tip.label = ttlab$MOTU
+treetree = phy_tree(treeNJ)
+treetree2 = drop.tip(treetree, which(duplicated(treetree$tip.label)))
+
+# format for phyloseq
+treetree2 = multi2di(treetree2)
+treetree2 = (root(treetree2,1))
+
+# create otu table (this is all samples)
+otuotu = otu_table(motunames[,-1], taxa_are_rows = F)
+
+# make otu table for mpala speccies only
+motunames_with_sp = left_join(motunames, RRA2[,1:4])
+mtusp = motunames_with_sp[which(motunames_with_sp$Location=="Mpala"),]
+
+otuotu = otu_table(mtusp[,-c(1,439:441)], taxa_are_rows =F)
+
+# combine into phyloseq object. Note that the tree probably contains some branches that are not covered by all samples in Mpala. But my thought is that more information makes a better tree.
+comboseq = phyloseq(treetree2,otuotu)
+
+# run unifrac
+set.seed(0)
+ufc = UniFrac(comboseq, normalized=F, weighted =F) # is already normalized
+hist(ufc)
+ufc[which(ufc<0)] = 0
+
+# ufc are the unifrac distances -- save this as a file
+ufcmat = as.matrix(ufc)
+rownames(ufcmat)=mtusp$Sample_ID[which(mtusp$Location=="Mpala")]
+colnames(ufcmat)=mtusp$Sample_ID[which(mtusp$Location=="Mpala")]
+#write.csv(ufcmat, "g99_UW_unifrac_dists.csv")
+
+```
+
+
+#### 4.5.ii Species level (averaged across individuals)
+
+```{r}
+# want to make a unifrac on the species level, so can average and re-run
+
+# only mpala species
+otuagg = mtusp[,c(2:438,440)] %>% group_by(Species) %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(mean))
+otuagg=unique(otuagg)
+otuotu_agg = otu_table(otuagg[,-438], taxa_are_rows = F)
+comboseq_agg = phyloseq(treetree2,otuotu_agg)
+
+# create unifrac
+ufc_agg = UniFrac(comboseq_agg, normalized=F, weighted =F) # is already normalized
+hist(ufc_agg)
+which(ufc_agg<0)
+
+ufcmat_agg = as.matrix(ufc_agg)
+rownames(ufcmat_agg)=otuagg$Species
+colnames(ufcmat_agg)=otuagg$Species
+#write.csv(ufcmat_agg, "g99_UW_unifrac_dists_sp.csv")
+```
+
+
+## 4. Phylogenetic Diversity!
+
+Bring in tree information and use it to calculate phylogenetic diversity within the samples
+
+```{r}
+phylo_nems = read.tree("g99_treeNJ_K80_gamma") 
+phylo_nems=ladderize(phylo_nems)
+
+ttlab = data.frame((topseq$MOTU[which(topseq$id %in% phylo_nems$tip.label)]))
+ttlab =topseq[which(topseq$id %in% phylo_nems$tip.label),]
+names(ttlab)[2]="MOTU"
+ttlab$MOTU = paste("MOTU",ttlab$MOTU, sep="_")
+ttlab=as.data.frame(ttlab)
+ttlab = left_join(ttlab[,c(1,2,5,6,7,8)], splink, by=c("MOTU"))
+# order ttlab by tip labels
+ttlab = ttlab[match( phylo_nems$tip.label, ttlab$id),]
+
+myPal <- colorRampPalette(c("red","yellow","green","blue"))
+
+
+# phylogeny colored by nem taxonomy
+#par(mfrow=c(1,1))
+plot(phylo_nems,show.tip=F)
+tiplabels(ttlab$scientific_name_ok, cex=0.5, col=transp(num2col(ttlab$bid_ok*100, col.pal=myPal), 0.7), frame="n", offset=0.0)#0.02
+temp=pretty(min(ttlab$bid_ok*100):max(ttlab$bid_ok*100),5)
+legend("bottomleft",fill=transp(num2col(temp, col.pal=myPal),.7),leg=temp, ncol=1, cex=0.7, title="best identity score")
+
+# phylogeny colored by core host
+plot(phylo_nems, cex=0.6, show.tip=F, align.tip.label=F, label.offset=0.005)
+tiplabels(ttlab$species, cex=0.5, frame="n", col=transp(num2col(ttlab$richness, col.pal=myPal), 0.7), offset=0.005)
+temp <- c(1,2,3,5,10)
+legend("topright", fill=transp(num2col(temp, col.pal=myPal),.7), leg=c(1,2,3,5,10), ncol=1, cex=0.7)
+```
+
+```{r}
+#names(RRA2)
+dim(RRA2[,30:466]) #437 MOTUs
+
+summary(phylo_nems)
+#tiplabs = as.data.frame(phylo_nems$tip.label)
+#left_join(phylo_nems$tip.label, ttlab)
+phylo_nems$tip.label = ttlab$MOTU
+## pd is not being calculated
+
+# takes a minute
+PDData_sum = data.frame(RRA_present, ses.pd(dplyr::select(RRA_present, MOTU_1:MOTU_1677), tree=phylo_nems,include.root = F, runs=50, null.model="richness"))
+names(PDData_sum)[1]="Sample_ID"
+
+# relationship between SR and PD
+ggplot(PDData_sum, aes(x=ntaxa, y=pd.obs.z))+
+  geom_point(aes(col=Species))+
+  geom_smooth(aes(col=Species),method="lm", formula=y~log(x), se=F)+
+  facet_wrap(~Species)
+
+
+PDData_sum$Diet=factor(PDData_sum$Diet, levels=c("B","M","G"))
+
+pdz = ggplot(PDData_sum[-which(PDData_sum$Species %in% c("Camel","Hippo")),], aes(x=Diet, y=pd.obs.z))+
+  geom_hline(yintercept=-2, linetype="dotted")+
+  geom_boxplot(data=PDData_sum[-which(PDData_sum$Species %in% c("Camel","Hippo")),], aes(x=Diet, y=pd.obs.z, col=Species), size=0.7, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
+  geom_boxplot(fill=NA, col="gray50", size=1)+
+  theme_bw(base_size=16)+
+  labs(x="Diet", y="PD Z-Value", title="Standardized PD")+
+  #scale_color_manual(values=c(animal_colors))+
+  scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  facet_wrap(~Feeding_Type, scales="free_x")+
+  guides(color=F)
+
+
+pd = ggplot(PDData_sum[-which(PDData_sum$Species %in% c("Camel","Hippo")),], aes(x=Diet, y=pd.obs))+
+  geom_boxplot(data=PDData_sum[-which(PDData_sum$Species %in% c("Camel","Hippo")),], aes(x=Diet, y=pd.obs, col=Species), size=0.7, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
+  geom_boxplot(fill=NA, col="gray50", size=1)+
+  theme_bw(base_size=16)+
+  labs(x="Diet", y="PD Z-Value", title="PD")+
+  scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  facet_wrap(~Feeding_Type, scales="free_x")+
+  guides(color=F)
+
+pdplot = gridExtra::grid.arrange(pd, pdz, ncol=2)
+#ggsave("g99_plots/pdplot2021.png",pdplot, device="png", dpi=300, width=10, height=5, units="in")
+
+```
+
+### Total PD
+
+```{r}
+PDData_3 = PDData_sum[-which(is.na(PDData_sum$pd.obs.p)),]
+dim(PDData_3) # 213 individuals; 201 excluding CH
+
+pdplot_sp = ggplot(PDData_3, aes(x=reorder(Species,-pd.obs,na.rm=T), y=pd.obs))+
+  geom_jitter(width=0.01,height=0.01, alpha=0.5, aes(color=Species))+
+  geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
+  guides(fill=F,col=F)+
+  theme_bw(base_size=16)+
+  scale_color_manual(values=animal_colors)+
+  scale_fill_manual(values=animal_colors)+
+  #scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  #scale_fill_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
+  labs(x="Host Species",y="PD",title="Faith's PD")
+pdplot_sp
+
+# total PD by species
+PD_spmod = lm(pd.obs~ Species, data=PDData_3)
+summary(PD_spmod)
+DHARMa::testResiduals(simulateResiduals(PD_spmod))
+tab_model(PD_spmod)
+car::Anova(PD_spmod)
+
+empd = emmeans(PD_spmod, ~Species)
+pairs(empd)%>%as.data.frame(.)%>%filter(p.value<0.05)
+
+# PD diff by species
+PD_spmodz = lm(pd.obs.z ~ Species, data=PDData_3)
+summary(PD_spmodz)
+DHARMa::testResiduals(simulateResiduals(PD_spmodz))
+tab_model(PD_spmodz)
+car::Anova(PD_spmodz)
+# looks ok?
+
+empdz= emmeans(PD_spmodz, ~Species)
+pairs(empdz)%>%as.data.frame(.)%>%filter(p.value<0.05)
+
+pdzplot_sp = ggplot(PDData_3, aes(x=reorder(Species,-pd.obs.z,na.rm=T), y=pd.obs.z))+
+  geom_hline(yintercept = -2, linetype="dotted")+
+  geom_jitter(width=0.01,height=0.01, alpha=0.5, aes(color=Species))+
+  geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
+  guides(fill=F,col=F)+
+  theme_bw(base_size=16)+
+  scale_color_manual(values=animal_colors)+
+  scale_fill_manual(values=animal_colors)+
+  #scale_color_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  #scale_fill_manual(values=c(animal_colors[c(1,3:7)], animal_colors[c(8:11,13)],animal_colors[14:18]))+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
+  annotate(geom="text", x=6, y=-5, label="Lower than expected PD")+
+  labs(x="Host Species",y="SES.PD",title="Standardized PD")
+
+pdspplot = gridExtra::grid.arrange(pdplot_sp,pdzplot_sp,ncol=2)
+#ggsave("g99_plots/pdplots2021_sp.png", pdspplot, width=10, height=5, units="in", dpi=300, device="png")
+
+```
+
+### Investigate PD as a function of host characteristics
+
+```{r}
+
+inv.phylo = inverseA(tree, nodes="TIPS", scale=T)
+prior_normal = list(G=list(G1=list(V=1,nu=0.02), G2=list(V=1,nu=0.02)),R=list(V=1,nu=0.02))
+
+PDMCMC = as.data.frame(PDData_3[-which(PDData_3$Species %in% c("Camel","Hippo")),])
+MPrichinfoMCMC$animal = MPrichinfoMCMC$Sample_ID
+MPrichinfoMCMC=as.data.frame(MPrichinfoMCMC)
+PDMCMC$phylo = PDMCMC$MSW93_Binomial
+PDMCMC = as.data.frame(PDMCMC) 
+
+# faster model
+set.seed(0)
+model_simple2pd = MCMCglmm.updateable(pd.obs.z ~ Diet+ Feeding_Type + log(SocialGrpSize)+ log(HomeRange_km2)+ log(Body_Mass_kg),
+                                      random=~phylo+MSW93_Binomial,
+                                      family = "gaussian",
+                                      ginverse=list(phylo=inv.phylo$Ainv),
+                                      prior=prior_normal,
+                                      data=PDMCMC,
+                                      nitt=10000, burnin=5000, thin=50,
+                                      verbose=F, pl=T)
+
+dpd=dredge(model_simple2pd, rank="DIC")
+dpd
+# intercept alone
+
+summary(model_simple2pd)
+
+set.seed(0)
+model_simple2pd_red = MCMCglmm.updateable(pd.obs.z ~ 1,
+                                          random= ~ phylo+MSW93_Binomial,
+                                          family = "gaussian",
+                                          ginverse=list(phylo=inv.phylo$Ainv),
+                                          prior=prior_normal,
+                                          data=PDMCMC,
+                                          nitt=500000, burnin=10000, thin=250,
+                                          verbose=F, pl=T)
+summary(model_simple2pd_red) 
+
+
+lambda = model_simple2pd_red$VCV[,"phylo"]/(model_simple2pd_red$VCV[,"phylo"]+model_simple2pd_red$VCV[,"units"])
+mean(lambda)
+posterior.mode(lambda)
+HPDinterval(lambda)
+
+# mean is 0.54 (0.24-0.83)
+
+#### Just PD
+set.seed(0)
+model_simple2pd.obs = MCMCglmm.updateable(pd.obs ~Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+ log(Body_Mass_kg), random=~phylo+MSW93_Binomial, family = "gaussian", ginverse=list(phylo=inv.phylo$Ainv), prior=prior_normal, data=PDMCMC, nitt=10000, burnin=5000, thin=50, verbose=F, pl=T)
+summary(model_simple2pd.obs)
+
+dpd2=dredge(model_simple2pd.obs, rank="DIC")
+dpd2
+# feeding type comparable to intercept
+
+set.seed(0)
+model_simple2pd.obs = MCMCglmm.updateable(pd.obs ~1, random=~phylo+MSW93_Binomial, family = "gaussian", ginverse=list(phylo=inv.phylo$Ainv), prior=prior_normal, data=PDMCMC, nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
+summary(model_simple2pd.obs)
+
+lambda_pd= model_simple2pd.obs$VCV[,"phylo"]/(model_simple2pd.obs$VCV[,"phylo"]+model_simple2pd.obs$VCV[,"units"])
+mean(lambda_pd)
+posterior.mode(lambda_pd)
+HPDinterval(lambda_pd)
+
+# 0.53 (0.19 - 0.82)
+```
+
+
+## 5. Ordination (Parasite communities)
+
+### 5.1 Create ordination objects using Jaccard distance
+
+```{r}
+
+
+# compare the MDS dimensions
+mds_input = dplyr::select(RRA_present[-which(RRA_present$Species %in% c("Elephant","Warthog")),], MOTU_1:MOTU_1677)
+ordMRC = metaMDS(mds_input, k=3, binary=T, distance="jaccard",autotransform = F, trymax=20)
+ordMRC2 = metaMDS(mds_input, k=2, binary=T, distance="jaccard",autotransform = F, trymax=20)
+ordMRC2 = metaMDS(mds_input, k=2, binary=T, distance="jaccard",autotransform = F, trymax=20, previous.best = ordMRC2)
+
+# determine k
+stressplot(ordMRC)
+stressplot(ordMRC2)
+
+gof3 = goodness(ordMRC)
+gof2 = goodness(ordMRC2)
+plot(gof2 ~ gof3);abline(0,1) # very similar
+
+plot(ordMRC);points(ordMRC, display="sites",cex=gof3*100)
+plot(ordMRC2);points(ordMRC2, display="sites",cex=gof2*100) # probably two points benefit
+
+pro3 = procrustes(ordMRC, ordMRC2)
+plot(pro3) 
+# three dimensions isn't that much better
+
+# 2D plot is probably more parsimonious
+mdsplot = data.frame(x1 = ordMRC2$points[,1], x2=ordMRC2$points[,2], species = RRA_present$Species[-which(RRA_present$Species %in% c("Elephant", "Warthog"))])
+
+MRCord = ggplot(mdsplot[-which(mdsplot$species%in%c("Elephant","Warthog")),], aes(x=x1, y=x2))+
+  geom_point(aes(col=species), size=2)+
+  geom_convexhull(aes(fill=species), alpha=0.2)+
+  theme_bw()+guides(fill=F, col=F)
+
+MRCord = ggplot(mdsplot, aes(x=x1, y=x2))+
+  geom_point(aes(col=species), size=2)+
+  geom_convexhull(aes(fill=species), alpha=0.2)+
+  scale_fill_manual(values=animal_colors[-c(7,17)])+
+  scale_color_manual(values=animal_colors[-c(7,17)])+
+  theme_bw()+guides(fill=F, col=F)+
+  annotate(geom="text", x=-2.5, y=-1.5, label=paste("Stress = ",round(ordMRC2$stress,2)))
+
+MRCord
+
+# wait to do the ord with the psite families
+#ggsave("g98_plots/MRCord_k2_motu.png", MRCord,device="png")
+
+```
+
+### 5.2 Statistical tests
+
+```{r}
+envMRC=dplyr::select(RRA_present, Species,Period)
+# check NAs
+envMRC$Period[which(is.na(envMRC$Period))]
+
+dim(RRA_present)
+
+# Create distance matrix
+MRCdist = vegdist(dplyr::select(RRA_present, MOTU_1:MOTU_1677), distance="jaccard", binary=T)
+MRCdiv = dbrda(MRCdist ~ Species,  data=envMRC, permutations=999, method="jaccard")
+MRCdiv0 = dbrda(MRCdist ~ 1,  data=envMRC, permutations=999, method="jaccard")
+
+ordiR2step(MRCdiv0,MRCdiv)
+MRCdiv
+anova(MRCdiv)
+
+# this is where i am
+
+```
+
+```{r}
+
+MPagg = RRAagg[-which(RRAagg$Species%in%c("Hybrid zebra", "Camel","Hippo")),]
+
+aggord = metaMDS(RRAagg[,-1], distance="jaccard", k=3, autotransform = F, binary=T)
+
+# add data
+MPenv_agg=left_join(MPagg, dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type))%>%unique()
+
+# calculate distance matrix
+MRCdist_agg = vegdist(MPagg[,-1], distance="jaccard", binary=T)
+
+# Test for effects
+MRCdiv_agg = dbrda(MRCdist_agg ~ Diet + Feeding_Type + log(Body_Mass_kg) + log(SocialGrpSize)+ log(HomeRange_km2), data=MPenv_agg, permutations=999, distance="jaccard")
+
+MRCdiv_agg0 = dbrda(MRCdist_agg ~ 1, data=MPenv_agg, permutations=999, distance="jaccard")
+
+anova(MRCdiv_agg, by="margin") # feeding type significant
+ordistep(MRCdiv_agg, trace = F)
+ordiR2step(MRCdiv_agg0, MRCdiv_agg, trace=F)
+# Feeding Type is the only variable kept in
+
+MRCdiv_agg_red =dbrda(MRCdist_agg ~ Feeding_Type, data=MPenv_agg, permutations=999, distance="jaccard")
+anova(MRCdiv_agg_red)
+ordiR2step(MRCdiv_agg0, MRCdiv_agg_red, trace=F)
+
+
+# reduced model, but with consideration of taxonomy
+MRCdbagg_red = dbrda(MRCdist_agg ~ Feeding_Type + MSW93_Order + MSW93_Family, data=MPenv_agg, permutations=999, distance="jaccard")
+MRCdbagg_red
+ordistep(MRCdbagg_red, direction = "both", trace=F, permutations = 1000, steps=1000)
+# best model contains feeding type and order, rather than family
+
+# create reduced final model
+MRCdbagg_red = dbrda(MRCdist_agg ~ Feeding_Type + MSW93_Order, data=MPenv_agg, permutations=999, distance="jaccard")
+anova(MRCdbagg_red, by="margin")
+anova(MRCdbagg_red) # overall test
+
+
+# plot results
+agg_ord_plot = data.frame(Species=RRAagg$Species, x1=aggord$points[,1], x2=aggord$points[,2], x3=aggord$points[,3])
+agg_ord_plot = left_join(agg_ord_plot, dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type))%>%unique()
+head(agg_ord_plot)
+
+#agg_ord_plot$Diet = factor(agg_ord_plot$Diet, levels=c("B","M","G"))
+
+agg_ord_plot$Feeding_Type = factor(agg_ord_plot$Feeding_Type, levels=c("HGF","R","PR"))
+library(stringr)
+species_level_ord =ggplot(agg_ord_plot, aes(x=x1, y=x2))+
+  geom_point(aes(col=MSW93_Order, shape=MSW93_Family), size=3, stroke=2)+
+  geom_convexhull(aes(fill=Feeding_Type),color="gray",alpha=0.3)+guides(linetype=F)+
+  scale_shape_manual(name="Family",values=c(1,3,5,7,12, 15, 16))+
+  scale_color_manual(name="Order",values=c("black","gray70","gray90"))+
+  scale_fill_manual(name="Gut Morphology",values=c("aquamarine4", "deepskyblue4","gray"), labels=c("Hindgut Fermenter","Ruminant", "Other"))+
+  ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0, max.overlaps = 15)+
+  theme_bw(base_size=14)+
+  scale_x_continuous(limits=c(-12, -8))+
+  annotate(geom="text", x=-11.5, y=-2, label=paste("Stress =", round(aggord$stress,3)))+
+  labs(x="NMDS1",y="NMDS2")
+species_level_ord
+
+# ele
+ggplot(agg_ord_plot[which(agg_ord_plot$Species=="Elephant"),], aes(x=x1, y=x2))+
+  geom_point(aes(col=MSW93_Order, shape=MSW93_Family), size=3, stroke=2)+
+  geom_convexhull(aes(fill=Feeding_Type),color="gray",alpha=0.3)+guides(linetype=F)+
+  scale_shape_manual(name="Family",values=c(1,3,5,7,12, 15, 16))+
+  scale_color_manual(name="Order",values=c("black","gray70","gray90"))+
+  scale_fill_manual(name="Gut Morphology",values=c("aquamarine4", "deepskyblue4","gray"), labels=c("Hindgut Fermenter","Ruminant", "Other"))+
+  ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0, max.overlaps = 15)+
+  theme_bw(base_size=14)+
+  #scale_x_continuous(limits=c(-12, -8))+
+  annotate(geom="text", x=-11.5, y=-2, label=paste("Stress =", round(aggord$stress,3)))+
+  labs(x="NMDS1",y="NMDS2")
+#ggsave("g98_plots/Species_Level_Ord_3.png", species_level_ord, device="png")
+
+
+
+
+
+```
+
+
+### 5.3 Tests using UniFrac Data
+
+#### 5.3.i Full dataset
+
+```{r}
+# corresponding distance matrix
+ufc_nems = read.csv("g99_UW_unifrac_dists.csv")
+dim(ufc_nems) 
+
+# excluding the weird hippo causes major problems
+
+# now use meta mds for visualization
+unifmds = metaMDS(ufc_nems[,-1], autotransform = F,binary=T, dist="jaccard", k=2)
+unifmdsdat = data.frame(x1=unifmds$points[,1], x2=unifmds$points[,2], sample=ufc_nems$X[])
+unifmdsdat = left_join(unifmdsdat, RRA_present, by=c("sample"="Sample_ID"))
+
+levels(as.factor(unifmdsdat$Species))
+
+# plot
+mds_uf_sp =ggplot(unifmdsdat, aes(x=x1, y=x2))+
+  geom_point(aes(col=Species))+
+  geom_convexhull(aes(fill=Species), alpha=0.2)+
+  scale_fill_manual(values=animal_colors)+
+  scale_color_manual(values=animal_colors)+
+  theme_bw(base_size=18)+guides(fill=F, col=F)+
+  annotate(geom="text", x=-0.2, y=-0.6, label=paste("Stress =", round(unifmds$stress,2)), size=5)+
+  labs(x="NMDS 1", y="NMDS 2")# stress is 0.105
+
+mds_uf_sp
+
+ggplot(unifmdsdat, aes(x=x1, y=x2))+
+  geom_jitter(aes(col=Species))+
+  geom_convexhull(aes(fill=Species), alpha=0.2)+
+  scale_fill_manual(values=animal_colors)+
+  scale_color_manual(values=animal_colors)+
+  theme_bw(base_size=18)+guides(fill=F, col=F)+
+  labs(x="NMDS 1", y="NMDS 2")+facet_wrap(~Species)
+
+#ggsave("g98_plots/MDS_with_unifrac_2021.png", mds_uf_sp, device="png")
+
+
+# add host info
+unifmdsdat = left_join(unifmdsdat, dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type))%>%unique()
+
+unif_feeding = ggplot(unifmdsdat[-which(unifmdsdat$Species %in% c("Hybrid zebra", "Camel","Hippo")),], aes(x=x1, y=x2))+
+  geom_point(aes(col=Feeding_Type))+
+  geom_convexhull(aes(col=Feeding_Type, fill=Feeding_Type, group=MSW93_Family), alpha=0.1)+
+  theme_bw()
+unif_feeding
+
+#ggsave("g98_plots/Feeding_MDS_unif.png", unif_feeding, device="png")
+
+# conduct test
+
+# Create distance matrix
+MRCdiv_uf = dbrda(ufc_nems[,-1] ~ Species,  data=unifmdsdat, permutations=999)
+MRCdiv0_uf = dbrda(ufc_nems[,-1] ~ 1,  data=unifmdsdat, permutations=999)
+
+ordiR2step(MRCdiv0_uf,MRCdiv_uf)
+MRCdiv_uf
+anova(MRCdiv_uf)
+
+```
+
+#### 5.3.ii Species level data
+
+```{r}
+# species level
+# exclude camel and hippo
+head(ufcmat_agg)
+ufcmat_agg2 = ufcmat_agg[-which(rownames(ufcmat_agg)%in%c("Camel","Hippo")),-which(rownames(ufcmat_agg)%in%c("Camel","Hippo"))]
+
+ufcaggmds = metaMDS(ufcmat_agg, k=2, binary=T, dist="jaccard", autotransform = F)
+unifmdsdat2 = data.frame(x1=ufcaggmds$points[,1], x2=ufcaggmds$points[,2], Species=rownames(ufcmat_agg))
+
+unifmdsdat2 = left_join(unifmdsdat2,dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type))%>%unique()
+
+ufcaggmds = metaMDS(ufcmat_agg, k=2, binary=T, dist="jaccard", autotransform = F)
+unifmdsdat3 = data.frame(x1=ufcaggmds$points[,1], x2=ufcaggmds$points[,2], Species=rownames(ufcmat_agg))
+unifmdsdat3 = left_join(unifmdsdat3,dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type))%>%unique()
+
+# plot
+mds_uf_sp2 =ggplot(unifmdsdat2, aes(x=x1, y=x2))+
+  geom_point(aes(col=Feeding_Type, shape=MSW93_Family), size=3, stroke=2)+
+  geom_convexhull(aes(fill=Feeding_Type), alpha=0.2)+
+  ggrepel::geom_text_repel(aes(label=Species), size=5)+
+  scale_shape_manual(values=c(1,3,5,7,12, 15, 16))+
+  guides(shape=F)+
+  theme_bw(base_size=14)+
+  labs(x="NMDS1", y="NMDS2")
+
+mds_uf_sp2
+
+#ggsave("g98_plots/unifrac_MDS_species.png", mds_uf_sp2, device="png")
+
+# test using all covariates
+MRCdiv_agg_ufc = dbrda(ufcmat_agg2 ~ Diet + Feeding_Type + log(Body_Mass_kg) + log(SocialGrpSize)+ log(HomeRange_km2), data=unifmdsdat2[-which(unifmdsdat2$Species%in%c("Camel","Hippo")),], permutations=999, method="jaccard")
+anova(MRCdiv_agg_ufc, by="margin") # feeding type
+ordistep(MRCdiv_agg_ufc, trace=F) # feeding type
+
+# add taxonomy
+MRCdiv_agg_ufc = dbrda(ufcmat_agg2 ~ Feeding_Type, data=unifmdsdat2[-which(unifmdsdat2$Species%in%c("Camel","Hippo")),], permutations=999, method="jaccard")
+MRCdiv_agg_ufc0 = dbrda(ufcmat_agg2 ~ 1, data=unifmdsdat2[-which(unifmdsdat2$Species%in%c("Camel","Hippo")),], permutations=999, method="jaccard")
+
+ordiR2step(MRCdiv_agg_ufc0,MRCdiv_agg_ufc, trace=F) 
+
+MRCdiv_agg_ufc = dbrda(ufcmat_agg2 ~ Feeding_Type + MSW93_Family + MSW93_Order, data=unifmdsdat2[-which(unifmdsdat2$Species%in%c("Camel","Hippo")),], permutations=999, method="jaccard")
+ordistep(MRCdiv_agg_ufc, trace=F) # Feeding type and order
+
+MRCdiv_agg_ufc = dbrda(ufcmat_agg2 ~ Feeding_Type +MSW93_Order, data=unifmdsdat2[-which(unifmdsdat2$Species%in%c("Camel","Hippo")),], permutations=999, method="jaccard")
+anova(MRCdiv_agg_ufc, by="margin")
+
+# plot
+# species_level_ord_uf =ggplot(unifmdsdat2, aes(x=x1, y=x2))+
+#   geom_point(aes(col=MSW93_Order, shape=MSW93_Family), size=3, stroke=2)+
+#   geom_convexhull(aes(fill=Feeding_Type),color="gray",alpha=0.3)+guides(linetype=F)+
+#   scale_shape_manual(name="Family",values=c(1,3,5,7,12, 15, 16))+
+#   scale_color_manual(name="Order",values=c("black","gray40","gray70"))+
+#   scale_fill_manual(name="Gut Morphology",values=c("aquamarine4", "deepskyblue4"))+
+#   ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0)+
+#   theme_bw(base_size=14)+
+#   #guides(shape="Family",color="Order", fill="Gut Morphology")+
+#   labs(x="NMDS1",y="NMDS2")
+# species_level_ord_uf
+
+# with cam and hip
+unifmdsdat3$Feeding_Type = factor(unifmdsdat3$Feeding_Type, levels=c("HGF","R","PR"))
+
+species_level_ord_uf =ggplot(unifmdsdat3, aes(x=x1, y=x2))+
+  geom_point(aes(col=MSW93_Order, shape=MSW93_Family), size=3, stroke=2)+
+  geom_convexhull(aes(fill=Feeding_Type),color="gray",alpha=0.3)+guides(linetype=F)+
+  scale_shape_manual(name="Family",values=c(1,3,5,7,12, 15, 16))+
+  scale_color_manual(name="Order",values=c("black","gray70","gray90"))+
+  scale_fill_manual(name="Gut Morphology",values=c("aquamarine4",  "deepskyblue4","gray"), labels=c("Hindgut Fermenter", "Ruminant","Other"))+
+  ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0, max.overlaps = 13)+
+  theme_bw(base_size=14)+
+  annotate(geom="text", x=-0.2, y=-0.32, label=paste("Stress =",round(ufcaggmds$stress,2)))+
+  #guides(shape="Family",color="Order", fill="Gut Morphology")+
+  labs(x="NMDS1",y="NMDS2")
+species_level_ord_uf
+
+#ggsave("g99_plots/Species_Level_Ord_uf_2021.png", species_level_ord_uf, device="png")
+
+```
+
+
+
+```{r}
+
+# Extract specific MOTUS and determine weights on MDS
+motu_wts = as.data.frame(ordMRC2$species)
+motu_wts$MOTU =row.names(motu_wts)
+names(motu_wts)
+
+
+motu_wts = unique(left_join(motu_wts, MOTU2))
+motu_wts$name= motu_wts$name2
+#View(motu_wts)
+motu_wts$name = as.factor(motu_wts$name)
+
+levels(motu_wts$name) 
+
+#levels(motu_wts$name) = c("Ancyclostomatidae","Ancyclostomatidae","Ancyclostomatidae","Cloacinidae","Cooperiidae", "Strongylidae","Strongylidae","Haemonchidae","Trichostrongylidae","Ancyclostomatidae","Chabertiidae","Strongylida (order)", "Strongyloidea (super family)","Strongylidae","Haemonchidae","Trichostrongylidae","Trichostrongylidae","Trichostrongyloidea (super family)","Trichostrongylidae","Trichostrongylidae", "Trichostrongylidae", "Protostrongylidae")
+
+
+######## OPTION 2 -- run the code below then come back here
+motu_wts2 = unique(left_join(motu_wts, test2, by=c("MOTU"="OTU")))
+levels(as.factor(motu_wts2$sp_f))
+
+vec=c()
+for(i in 1:length(motu_wts2$sp_f2)){
+  sp = str_split(motu_wts2$sp_f2,"_")[[i]][1]
+  vec = c(vec,sp)
+}
+
+motu_wts2$genus = as.factor(vec)
+levels(motu_wts2$genus)
+levels(motu_wts2$genus)[c(4, 7,8,19,24,25,27)]=c("Cooperia","Cylicocyclus","Cylicostephanus", "Skrjabinodentus", "Trichostrongylidae", "Trichostrongylidae", "Trichostrongylus")
+
+#replace =  c("Bunostomum","Strongylida","Cooperia","Cooperia", "Cooperia","Cooperia","Cooperia","Coronocyclus", "Coronocyclus", "Craterostomum","Cyclicocyclus","Cyclicocyclus","Cyclicocyclus","Cyclicocyclus", "Haemonchus", "Haemonchus", "Khalilia","Murshidia", "Murshidia","Murshidia","Oesophagostomum", "Oesophagostomum", "Ostertagia", "Parapoteriostomum", "Quilonia", "Skrabinodentus", "Skrabinodentus", "Strongyloidea", "Strongylus", "Strongylus", "Strongylus", "Trichostrongylidae", "Trichostrongylidae", "Trichostrongyloidea", "Trichostrongylus", "Trichostrongylus", "Trichostrongylus","Trichostrongylus", "Trichostrongylus", "Triodontophorus", "Triodontophorus")
+#levels(motu_wts2$genus)=replace
+
+
+motu_wts %>% gather(MDS1:MDS2, key=Axis, value=Score)%>%
+ggplot(aes(x=Axis, y=Score))+
+  geom_point(aes(group=name,col=name), position=position_dodge(width=0.75))+
+  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
+
+# low abundance ones were filtered out in the code below with the new names so they show up as NA. 
+
+# task -- find centroid for each parasite family.
+psitecent = motu_wts %>% group_by(name)%>% summarize_at(vars(MDS1:MDS2), funs(mean(.,na.rm=T)))
+#plotMDSMRC2 = left_join(plotMDSMRC, colorsp, by=c("Species"="Host"))
+
+
+colors_for_plot= c("dodgerblue", "magenta3","green3","maroon1", "maroon3", "maroon", "dodgerblue3",  "deepskyblue3", "dodgerblue4","gold3", "cadetblue1", "greenyellow", "green4", "deepskyblue","lightsteelblue3",  "gold", "darkorchid4", "lightskyblue2", "darkorchid1")
+
+colors_for_plot2 = c("dodgerblue", "magenta3","green3","maroon1", "maroon3", "dodgerblue3", "deepskyblue3", "gold3",  "dodgerblue4", "cadetblue1", "maroon", "greenyellow", "green4", "deepskyblue",  "darkorchid4", "gold", "lightsteelblue3",  "darkorchid1",  "lightskyblue2")
+
+mdsplot_motu = psitecent %>%
+  ggplot(aes(x=-MDS1, y=MDS2))+
+  theme_gray(base_size=12)+
+  geom_jitter(data=mdsplot, aes(x=-x1,y=x2,col=species), size=2, stroke=1.5,width=0.1, height=0.1, alpha=0.5)+
+  geom_convexhull(data=mdsplot, aes(x=-x1,y=x2, fill=species), alpha=0.3)+
+  scale_fill_manual(values=animal_colors[-c(7,17)])+
+  scale_color_manual(values=animal_colors[-c(7,17)])+
+  geom_segment(aes(xend=0, yend=0))+
+  ggrepel::geom_text_repel(aes(label=name), max.overlaps = 15)+
+  labs(y="NMDS 2", x="NMDS 1")+
+  annotate(geom="text", x = -3, y=-1.5, label=paste("Stress =", round(ordMRC2$stress,2)), size=5)+
+  theme_bw(base_size=18)+guides(fill=F, col=F)
+
+
+
+psitecent %>%
+  ggplot(aes(x=-MDS1, y=MDS2))+
+  theme_gray(base_size=12)+
+  geom_jitter(data=mdsplot, aes(x=-x1,y=x2,col=species), size=2, stroke=1.5,width=0.1, height=0.1, alpha=0.5)+
+  geom_convexhull(data=mdsplot, aes(x=-x1,y=x2, fill=species), alpha=0.3)+
+  scale_fill_manual(values=animal_colors)+
+  scale_color_manual(values=animal_colors)+
+  geom_segment(aes(xend=0, yend=0))+
+  facet_wrap(~mdsplot$species)+
+  theme_bw(base_size=14)+guides(fill=F, col=F)+facet_wrap(~species) #colors aren't correct ughh
+
+mdsplot_motu
+
+#ggsave("g99_plots/MDS_MOTU_withPsites_2021.png", mdsplot_motu, device="png")
+# for editing in illustrator:
+#ggsave("g98_plots/MDS_MOTU_withPsites_fam_2021.pdf", mdsplot_motu, device="pdf")
+
+
+
+
+
+```
+
+
+## 7. Creating a network
+
+### 7.1 Setup
+
+```{r}
+# Prevalence of each motu
+# first remove very low abundance reads
+RRA3 = RRA2 %>% mutate_at(vars(MOTU_1:MOTU_1677), funs(ifelse(.>0.01,.,0)))
+
+avgRRA = RRA3 %>% group_by(Species) %>% summarize_at(vars(MOTU_1:MOTU_1677), funs(mean))
+
+samp_mat_1 = avgRRA
+
+levelplot(as.matrix(samp_mat_1[,-1]),  col.regions = gray(0:100/100))
+
+hist(unlist(samp_mat_1[,-1]))
+unlist(samp_mat_1[,-1])[unlist(samp_mat_1[,-1])>0.001]%>%hist() # avg RRA > 0.01 when present
+
+
+```
+
+### 7.2 Plotting
+```{r}
+
+# need to put all in one column
+mat_1_long <- gather(samp_mat_1, key=OTU, value=RRA, -Species)
+head(mat_1_long)
+
+# remove very rare or zero
+mat_1_long <- mat_1_long[-which(mat_1_long$RRA == 0),]
+
+g <- graph.data.frame(mat_1_long, directed=FALSE)
+
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-0.5
+E(g)$weight = E(g)$RRA
+
+
+plot(g, vertex.label.cex = 0.8, vertex.size=ifelse(V(g)$type,1,7), vertex.label.color = ifelse(V(g)$type,"gray","black"), edge.width=E(g)$weight)
+
+
+# Exclude rare species
+head(mat_1_long)
+
+# use atleast 5 samples
+RRA2 %>% group_by(Species) %>% summarize(n())
+RRA_present %>% group_by(Species) %>% summarize(n()) # no kudu or waterbuck
+
+
+mat_2_long = mat_1_long[-which(mat_1_long$Species %in% c("Waterbuck","Kudu")),]
+
+g <- graph.data.frame(mat_2_long, directed=FALSE)
+
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-0.5
+E(g)$weight = E(g)$RRA
+
+
+plot(g, vertex.label.cex = 0.8, vertex.size=ifelse(V(g)$type,1,7), vertex.label.color = ifelse(V(g)$type,"gray","black"), edge.width=E(g)$weight)
+
+
+```
+
+### 7.3 Labeling MOTUs by parasite group
+
+Note that many of these IDs might be mistakes or quite different from the true species identity.
+
+```{r}
+
+motu99 = data.frame(OTU = paste("MOTU_",motuinfo$cluster_sumatra99,sep=""), rank=motuinfo$rank_ok, sp=motuinfo$scientific_name_ok)
+
+head(motu99)
+motu99 %>% group_by(OTU) %>% summarize(n())
+
+test = left_join(mat_2_long, motu99)
+
+# takes a second
+test=unique(test)
+
+# which MOTUs have different sp names
+getuni = test %>% group_by(OTU,rank,sp) %>% summarize(n=n()) %>% group_by(OTU) %>% summarize(n=n())%>%filter(n>1)
+
+# manually get the taxon
+test[which(test$OTU=="MOTU_101"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_102"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_1076"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_11"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_116"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_118"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_12"),]$sp <- "Strongyloidea"
+
+test[which(test$OTU=="MOTU_126"),]$sp <- "Strongyloidea"# or 6
+test[which(test$OTU=="MOTU_128"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_133"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_151"),]$sp <- "Trichostrongylidae" #or4
+test[which(test$OTU=="MOTU_166"),]$sp <- "Strongyloidea"
+
+test[which(test$OTU=="MOTU_184"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_193"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_20"),]$sp <- "Oesophagostomum"
+test[which(test$OTU=="MOTU_216"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_250"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_266"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_271"),]$sp <- "Trichostrongylus"
+test[which(test$OTU=="MOTU_35"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_36"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_390"),]$sp <- "Trichostrongylus"
+test[which(test$OTU=="MOTU_41"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_43"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_44"),]$sp <- "Trichostrongylus"
+test[which(test$OTU=="MOTU_46"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_51"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_580"),]$sp <- "Bunostomum"
+test[which(test$OTU=="MOTU_72"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_83"),]$sp <- "Strongyloidea"
+test[which(test$OTU=="MOTU_86"),]$sp <- "Trichostrongylidae"
+test[which(test$OTU=="MOTU_9"),]$sp <- "Trichostrongylus"
+
+
+
+# test[which(test$OTU=="MOTU_75"),]$sp <- "Trichostrongylidae"
+# test[which(test$OTU=="MOTU_101"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_116"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_118"),]$sp <- "Trichostrongylidae"
+# test[which(test$OTU=="MOTU_133"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_151"),]$sp <- "Trichostrongylidae"
+# test[which(test$OTU=="MOTU_166"),]$sp <- "Strongyloidea"
+# 
+# test[which(test$OTU=="MOTU_1077"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_128"),]$sp <- "Trichostrongylidae"
+# test[which(test$OTU=="MOTU_178"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_184"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_20"),]$sp <- "Oesophagostomum"
+# test[which(test$OTU=="MOTU_230"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_271"),]$sp <- "Trichostrongylus"
+# test[which(test$OTU=="MOTU_35"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_36"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_43"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_44"),]$sp <- "Trichostrongylus"
+# test[which(test$OTU=="MOTU_748"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_83"),]$sp <- "Strongyloidea"
+# test[which(test$OTU=="MOTU_9"),]$sp <- "Trichostrongylus vitrinus"
+# test[which(test$OTU=="MOTU_584"),]$sp <- "Trichostrongylidae"
+#test[which(test$OTU=="MOTU_86"),]$sp <- "Trichostrongylidae"
+
+
+
+test %>% group_by(OTU,sp) %>% unique()
+
+test2 = (unique(test[,-4]))
+
+test2 %>% group_by(OTU,sp,Species) %>% summarize(n=n()) %>% filter(n>1)
+
+dim(test2) 
+
+# need to make a column with sp and motu
+test2[order(test2$sp),]
+
+test2$sp2 = paste(test2$sp,str_remove(test2$OTU, "MOTU_"),sep="_")
+
+
+# simplify by removing any connections when the avg RRA less than 0.1%???
+length(which(test2$RRA <0.001))
+test3 = test2[-which(test2$RRA <0.001),]
+
+new_mat = test3[,c(1,5,3)]
+g <- graph.data.frame(new_mat, directed=FALSE)
+
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-0.5
+
+
+plot(g, vertex.label.cex = 1.2, vertex.size=ifelse(V(g)$type,3,8), vertex.label.color = ifelse(V(g)$type,"gray","black"))
+
+```
+
+```{r}
+head(test3)
+# rearrange
+test3=test3[,c(1,2,4,3)]
+
+g <- graph.data.frame(test3, directed=FALSE)
+
+V(g)$type <- bipartite_mapping(g)$type 
+V(g)$color <- ifelse(V(g)$type, "lightblue", "salmon")
+V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(g)$color <- "lightgray"
+V(g)$frame.color <-  "white"
+V(g)$label.dist <-0.5
+E(g)$weight = E(g)$RRA
+
+plot(g, vertex.label.cex = 0.9, vertex.size=ifelse(V(g)$type,3,8), vertex.label.color = ifelse(V(g)$type,"gray","black"), edge.width =E(g)$weight, layout=layout_nicely)
+
+
+
+
+```
+
+### 7.3 Create clusters based on Jaccard distance
+
+```{r}
+
+test4 = test3 %>% dplyr::select(Species, OTU, RRA) %>% spread(key=OTU, value=RRA, fill=0)
+
+allRRA = unlist(test4[,-1])
+hist(log(allRRA[allRRA>0]))
+
+test5 = as.matrix(test4[,-1])
+row.names(test5)=test4$Species
+
+levelplot(as.matrix(test5))
+
+ggplot(test3[test3$Species %in% c("Plains zebra","Grevys zebra"),], aes(x=OTU,y=RRA))+
+  geom_col(aes(fill=Species))
+
+```
+
+### 7.4 Community detection
+
+```{r}
+
+test4df = as.data.frame(test5)
+test4_bin = test4df %>% mutate_at(vars(MOTU_1:MOTU_99), funs(ifelse(.>0,1,0))) # or motu90
+rownames(test4_bin)=rownames(test4)
+mod = computeModules(test4_bin, steps=1000)
+
+plotModuleWeb(mod, labsize=0.8, displayBlabels = F)
+
+```
+
+```{r}
+
+#####################################
+# project host matrix
+g2 = bipartite_projection(g, types=E(g)$type)
+
+hostgraph = g2$proj1
+c = igraph::closeness(hostgraph)
+b = igraph::betweenness(hostgraph)
+d = igraph::degree(hostgraph)
+e = igraph::eigen_centrality(hostgraph)$vector
+
+netdata = data.frame(species=names(c),c=c, b=b, d=d, e=e)
+netlong = pivot_longer(netdata,cols=c(c,b,d,e), names_to="Measure", values_to="Value")
+
+ggplot(netlong, aes(x=reorder(species,-Value), y=Value))+
+  geom_col(aes(fill=species), alpha=0.5)+
+    theme_bw(base_size=14)+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0))+
+  scale_fill_manual(values=animal_colors)+guides(fill=F)+
+  facet_wrap(~Measure, scales="free_y")
+
+
+plot(hostgraph)
+######
+
+
+
+
+```
+
+
+
+```{r}
+
+
+netlong = tidyr::pivot_longer(netdata,cols=c(c,b,d,e), names_to="Measure", values_to="Value")
+
+levels(as.factor(netlong$species))
+
+nodedata = ggplot(netlong, aes(x=reorder(species,-Value), y=Value))+
+  geom_col(aes(fill=species), alpha=0.6)+
+    theme_bw(base_size=14)+
+  theme(axis.text.x = element_text(angle=90, hjust=1,vjust=0))+
+  scale_fill_manual(values=animal_colors)+guides(fill=F)+
+  facet_wrap(~Measure, scales="free_y")
+nodedata
+#ggsave("g98_plots/nodeplots.png", nodedata, device="png")
+
+phylodists=cophenetic(tree) # patristic distance
+# calculate total distance from all others
+totaldists = as.data.frame(rowSums(phylodists)/16) # this is Average pairwise distance
+totaldists$sciname = rownames(totaldists)
+
+head(netdata)
+# correct sci name
+netdata$sciname = c("Phacochoerus_africanus", "Syncerus_caffer", "Madoqua_kirkii", "Giraffa_camelopardalis", "Alcelaphus_buselaphus","Aepyceros_melampus", "Oryx_gazella", "Loxodonta_africana","Camelus_dromedarius", "Taurotragus_oryx", "Gazella_granti", "Equus_grevyi",  "Equus_burchellii" ,"Equus_asinus",  "Bos_taurus", "Hippopotamus_amphibius" )
+
+netdata=dplyr::left_join(netdata,totaldists)
+names(netdata)[7]="Distance"
+
+ggplot(netdata, aes(x=log(Distance), y=e))+
+  geom_point(size=3,aes(col=species))+
+  scale_color_manual(values=animal_colors[-c(14,18)])+
+  geom_smooth(method="lm")+guides(col=F)+
+  ggrepel::geom_text_repel(aes(label=species))+
+  theme_bw()
+
+
+
+
+```
+
+
+```{r}
+
+netlong2 = tidyr::pivot_longer(netdata,cols=c(c,b,d,e), names_to="Measure", values_to="Value")
+netdata=dplyr::left_join(netdata, dplyr::select(RRA_present, Species, MSW93_Order:Feeding_Type), by=c("species"="Species"))%>%unique()
+
+netlong2 = dplyr::left_join(netlong2, dplyr::select(netdata, sciname, MSW93_Order:Feeding_Type))
+
+measuredict = c(b="Betweenness",c="Closeness", d="Degree", e="Eigenvector")
+nodedata2 = ggplot(netlong2, aes(x=Distance, y=Value))+
+    theme_bw(base_size=14)+
+  #geom_smooth(method="lm", se=F, size=1.5, col="gray20")+
+    geom_point(aes(col=MSW93_Family, shape=Feeding_Type), alpha=0.6, size=4)+
+  scale_color_manual(values=c("dodgerblue","goldenrod","green3","maroon3","goldenrod1","greenyellow","green4"))+ # use animalcols2 for values if color
+  #ggrepel::geom_text_repel(data=netlong2[which(netlong2$species %in% c("Eland", "Cattle")),], aes(label=species))+
+  facet_wrap(~Measure, scales="free_y", labeller = labeller(Measure=measuredict))+
+  labs(x="Mean Pairwise Distance")
+nodedata2
+
+plot(hostgraph)
+
+
+V(hostgraph)$color <- ifelse(V(hostgraph)$name %in% c("Hippo"),"greenyellow", ifelse(V(hostgraph)$name %in% c("Elephant"), "green3", ifelse(V(hostgraph)$name %in% c("Warthog"), "green4", ifelse(V(hostgraph)$name %in% c("Giraffe"), "goldenrod1", ifelse(V(hostgraph)$name %in% c("Grevys zebra","Plains zebra", "Donkey"), "maroon3", "dodgerblue")))))
+#V(g)$shape <- ifelse(V(g)$type, "square", "circle")
+E(hostgraph)$color <- "lightgray"
+V(hostgraph)$frame.color <-  "white"
+V(hostgraph)$label.dist <-0
+
+
+plot(hostgraph, vertex.label.cex = 1.5, vertex.size=10, vertex.label.color = "gray30", edge.width=E(hostgraph)$weight/2, layout=layout_nicely)
+
+#ggsave("g99_plots/nodeplot_unipartite.png", nodedata2, device="png")
+
+
+# hippo zeb
+
+hz= RRA2%>% filter(Species %in% c("Hippo", "Grants gazelle", "Eland"))
+hz_id = which(hz %>% dplyr::select(MOTU_1:MOTU_1677) %>% colSums() > 0 ) %>%names()
+hz2 = hz %>% dplyr::select(hz_id)
+hz2$Species =hz$Species
+hz2$ID = hz$Sample_ID
+
+head(hz2)
+hz2 = hz2 %>% pivot_longer(MOTU_2:MOTU_1560)
+hz2$bin = ifelse(hz2$value>0,1,0)
+
+ggplot(hz2, aes(x=Species, y=bin))+
+  geom_col(aes(fill=ID))+facet_wrap(~name)
+# looks like the same hippo (HIP_93)
+
+
+# MOTU 21 is shared between hippo, eland, gga
+motu_wts2[which(motu_wts2$MOTU=="MOTU_32"),]
+
+hz2[which(hz$Species=="Grants gazelle"& hz$MOTU_21>0),]
+
+```
+
+
+
+```{r}
+
+cor.test(netdata$e, netdata$Distance) # that is a pretty strong correlation
+cor.test(netdata$e, netdata$Distance, method="spearman")
+cor.test(netdata$e, log(netdata$Distance))
+cor.test(netdata$c, netdata$Distance, method="spearman")
+
+# create models with host information
+### C
+library(caper)
+comp.data=comparative.data(tree, netdata[-which(netdata$species %in% c("Hippo","Camel")),], names.col="MSW93_Binomial", vcv.dim=3, warn.dropped=TRUE)
+# there should be 13 species included
+
+c_mod = pgls(c ~ Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+log(Body_Mass_kg)+log(Distance), data=comp.data)
+summary(c_mod)
+d_c = dredge(c_mod)
+d_c[1:5,] # intercept
+
+c_mod = pgls(c ~ log(Distance), data=comp.data)
+summary(c_mod)
+
+
+### E
+e_mod = pgls(e ~ Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+log(Body_Mass_kg)+log(Distance), data=comp.data)
+summary(e_mod)
+d_e = dredge(e_mod)
+d_e[1:5,] # feeding type
+e_mod = pgls(e ~ Feeding_Type, data=comp.data)
+summary(e_mod)
+
+
+
+### B
+b_mod = pgls(b ~ Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+log(Body_Mass_kg)+log(Distance), data=comp.data, lambda=1, kappa=1, delta=1)
+summary(b_mod)
+d_b = dredge(b_mod)
+d_b[1:5,]# sgs
+b_mod = pgls(b ~ log(SocialGrpSize), data=comp.data, lambda=1, kappa=1,delta=1)
+summary(b_mod)
+
+
+### D
+d_mod = pgls(d ~ Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+log(Body_Mass_kg)+log(Distance), data=comp.data, lambda=1,kappa=1,delta=1)
+summary(d_mod)
+d_d = dredge(d_mod)
+d_d[1:5,] # fd
+d_mod = pgls(d ~ log(Distance), data=comp.data, lambda=1,kappa=1,delta=1)
+summary(d_mod)
+
+# ruminants have higher degree and eigenvector centrality
+# animals with larger social groups have higher betweenness and closeness
+
+
+nodedata2 = ggplot(netlong2, aes(x=log(SocialGrpSize), y=Value))+
+    theme_bw(base_size=14)+
+  geom_smooth(method="lm", se=F, size=1, col="gray20")+
+    geom_point(aes(col=MSW93_Family, shape=Feeding_Type), alpha=0.6, size=4)+
+  scale_color_manual(values=c("dodgerblue","goldenrod","green3","maroon3","goldenrod1","greenyellow","green4"))+ # use animalcols2 for values if color
+  #ggrepel::geom_text_repel(data=netlong2[which(netlong2$species %in% c("Eland", "Cattle")),], aes(label=species))+
+  facet_wrap(~Measure, scales="free_y", labeller = labeller(Measure=measuredict))+
+  labs(x="log(Social Group Size)")
+nodedata2
+
+nod_dist = netlong2[which(netlong2$Measure %in% c("d","e")),]
+nod_soc = netlong2[which(netlong2$Measure %in% c("c","b")),]
+
+not_dist_plot = ggplot(nod_dist, aes(x=Distance, y=Value))+
+  theme_bw(base_size=14)+
+  geom_smooth(method="lm", se=T, size=1, col="gray20")+
+  geom_point(aes(col=MSW93_Family, shape=Feeding_Type), alpha=0.6, size=4)+
+  scale_color_manual(values=c("dodgerblue","goldenrod","green3","maroon3","goldenrod1","greenyellow","green4"))+
+  facet_wrap(~ Measure, scales="free_y", labeller=labeller(Measure=measuredict))+
+  labs(x="Average Pairwise Distance")
+not_dist_plot
+
+not_soc_plot = ggplot(nod_soc, aes(x=log(SocialGrpSize), y=Value))+
+  theme_bw(base_size=14)+
+  geom_smooth(method="lm", se=T, size=1, col="gray20")+
+  #geom_smooth(data= nod_soc[-which(nod_soc$species=="Cattle"),], aes(x=log(SocialGrpSize), y=Value), se=F, linetype="dotted", method="lm", color="red", size=2)+
+  geom_point(aes(col=MSW93_Family, shape=Feeding_Type), alpha=0.6, size=4)+
+  scale_color_manual(values=c("dodgerblue","goldenrod","green3","maroon3","goldenrod1","greenyellow","green4"))+
+  facet_wrap(~ Measure, scales="free_y", labeller=labeller(Measure=measuredict))+
+  labs(x="log(Social Group Size)")
+not_soc_plot
+
+nodplots = gridExtra::grid.arrange(not_dist_plot, not_soc_plot, ncol=1)
+
+#ggsave("g99_plots/nodplots_2021b.png", nodplots)
+
+
+
+# closeness not defined for disconnected graphs -- use only largest component:
+components = igraph::components(hostgraph)
+subhost = induced_subgraph(hostgraph, which(components$membership == 2))
+plot(subhost)
+
+c2 = igraph::closeness(subhost)
+c_data=data.frame(c = c2, species=names(c2))
+nd2 = left_join(c_data, netdata[,c(1,6:18)])
+comp.data2 = comparative.data(tree, nd2, names.col="MSW93_Binomial", vcv.dim=3, warn.dropped=TRUE)
+
+c_mod2 = pgls(c ~ Diet+Feeding_Type+log(SocialGrpSize)+log(HomeRange_km2)+log(Body_Mass_kg)+log(Distance), data=comp.data2)
+summary(c_mod2)
+d_c = dredge(c_mod2)
+d_c[1:5,] # intercept
+
+c_mod2 = pgls(c ~ log(SocialGrpSize), data=comp.data2)
+summary(c_mod2)
+
+
+```
+
+
+Which species important?
+
+```{r}
+
+netdata$sc = BBmisc::normalize(netdata$c, method = "range", range=c(0,1))
+netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
+netdata$se = BBmisc::normalize(netdata$e, method="range", range=c(0,1))
+netdata$sb = BBmisc::normalize(netdata$b, method="range", range=c(0,1))
+netdata$tot = netdata$sc+netdata$sd+netdata$se+netdata$sb
+neworder = netdata$species[order((netdata$sc)+(netdata$sd)+(netdata$se)+(netdata$sb))]
+neworder = netdata$species[order(netdata$tot)]
+
+netlongsc = tidyr::pivot_longer(netdata, cols=c(sc,sb,sd,se), names_to="Measure", values_to="Value")
+
+netlongsc$species = factor(netlongsc$species, levels = neworder)
+
+netlongsc$Measure=as.factor(netlongsc$Measure)
+levels(netlongsc$Measure)=c("Betweenness","Closeness","Degree","Eigenvector")
+ggplot(netlongsc, aes(x=species, y=Measure))+
+  geom_tile(aes(fill=Value))+
+  scale_fill_viridis_c(option="A")+
+  labs(x="")+
+  theme_bw(base_size=18)+
+  theme(aspect.ratio = 1/3.5, axis.text.x=element_text(angle=90,hjust=1, vjust=0))
+
+
+```
+
+
+### 8. Species Extinction implications
+
+```{r}
+# use full dataset
+test6=as.matrix(test5)
+#test6=as.matrix(samp_mat_2)
+
+net2=as.network(test6, directed=F, loops=F, matrix.type="bipartite")
+net2
+
+history=Mostconnected(Network = net2)
+history
+historydf=history
+rownames(test6) # doublecheck and run the appropriate one
+
+#spindex=data.frame(species=rownames(test6), Spp=seq(1,18), IUCN= c("LC(-)","VU(+)","EN(.)", "LC(-)","NT(-)","LC(.)", "D", "D","LC(.)","LC(.)","LC(.)","LC(-)","VU(.)","LC(-)" ,"D", "VU(-)", "LC(.)", "NT(-)"))
+
+# This one 
+#spindex=data.frame(species=rownames(test6), Spp=seq(1,18), IUCN= c("LC(-)","EN(.)", "VU(+)", "NT(-)","D","LC(.)", "LC(-)",  "D","LC(.)", "LC(.)","VU(.)","LC(-)", "LC(.)","D", "VU(-)",  "LC(.)","NT(-)", "LC(-)"))
+
+
+# smaller dataset:
+spindex=data.frame(species=rownames(test6), Spp=seq(1,16), IUCN= c("NT(-)", "D","D", "LC(.)", "D", "LC(.)", "VU(+)", "VU(-)", "LC(-)", "EN(.)", "LC(-)","VU(.)", "LC(.)", "LC(.)", "NT(-)", "LC(-)"))
+
+
+
+historydf=(left_join(history,spindex))
+
+historydf$IUCN=factor(historydf$IUCN, levels=c("D","LC(.)","LC(-)","NT(-)","VU(+)","VU(.)","VU(-)","EN(.)"))
+
+exts = ggplot(historydf, aes(x=reorder(species,-Secondary_extinctions), y=Secondary_extinctions))+
+  geom_col(aes(fill=IUCN))+
+  scale_fill_manual(values=c("#00B2EE", "#ADD8E6", "#FFD39B", "#FFA07A", "#FF7F50", "#EE6363", "#CD5555", "#CD3700"))+
+  theme_bw(base_size=18)+
+  theme(axis.text.x =element_text(angle = 90, hjust=1, vjust=0))+
+  labs(x="Host Species",y="Parasite mOTUs Lost")
+exts
+#ggsave("g99_plots/sp_exts_2021.png", exts, device="png")
+
+# total extinctions of VU(+) or more:
+historydf[which(historydf$IUCN %in% c("VU(.)","VU(+)", "VU(-)", "EN")),]$Secondary_extinctions %>%sum()
+47/194
+
+```
+
+
+### Check for host/parasite co-evolution
+
+```{r}
+library(paco)
+# prune host tree
+tree = drop.tip(tree, "Tragelaphus_scriptus")
+treeNJ_MOTU  = treeNJ
+treeNJ_MOTU$tip.label = ttlab$MOTU.1
+
+#write.tree(treeNJ_MOTU, "PACO/MOTU_tree")
+#write.tree(tree, "PACO/HOST_tree")
+#write.csv(gllink2, "PACO/RRAmatrix.csv", row.names=T)
+
+htree = cophenetic(tree)
+# need to rename treeNJ tips
+ptree = cophenetic(treeNJ_MOTU)
+
+avgRRA$Species
+gllink = left_join(avgRRA, dplyr::select(RRA2, Species, MSW93_Binomial))%>%unique()
+#gllink2 = as.data.frame(gllink[-which(is.na(gllink$MSW93_Binomial)==T),])
+rownames(gllink)=gllink$MSW93_Binomial
+# need to specify as a df
+gllink2 = as.data.frame(gllink[,-c(1,439)])
+rownames(gllink2) = rownames(gllink)
+
+D = prepare_paco_data(H=htree, P=ptree, HP=gllink2)
+#D2 = prepare_paco_data(H=htree, P=ptree, HP=gllink2)
+
+D = add_pcoord(D, correction="cailliez")
+#D2 = add_pcoord(D2, correction="cailliez")
+
+# This takes forever to run
+D = PACo(D, nperm=1000, seed=12, method="r0", symmetric=F)
+#D2 = PACo(D2, nperm=1000, seed=12, method="r0", symmetric=F)
+
+# This also takes forever
+D = paco_links(D)
+#D2 = paco_links(D2)
+
+res = residuals_paco(D$proc)
+plot(res~D$jackknife)
+
+sum(res^2)
+print(D$gof)
+
+
+Dres = data.frame(res=res, connection=names(D$jackknife))
+Dres =Dres[order(Dres$res),]
+Dres$sp = rep("",dim(Dres)[1])
+Dres$MOTU = rep("",dim(Dres)[1])
+for(i in 1:length(Dres$res)){
+  Dres$sp[i]=strsplit(Dres$connection, split="-")[[i]][1]
+  Dres$MOTU[i]=strsplit(Dres$connection, split="-")[[i]][2]
+}
+
+ggplot(Dres, aes(x=reorder(sp, -res), y=res))+
+  geom_point()+
+  theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0))
+
+# Dres2 = data.frame(res=res, connection=names(D2$jackknife))
+# Dres2 =Dres2[order(Dres2$res),]
+# Dres2$sp = rep("",284)
+# Dres2$MOTU = rep("",284)
+# for(i in 1:length(Dres2$res)){
+#   Dres2$sp[i]=strsplit(Dres2$connection, split="-")[[i]][1]
+#   Dres2$MOTU[i]=strsplit(Dres2$connection, split="-")[[i]][2]
+# }
+# 
+# ggplot(Dres2, aes(x=reorder(sp, -res), y=res))+
+#   geom_point()+
+#   theme(axis.text.x = element_text(angle=90, hjust=1, vjust=0))
+
+#### Plotting
+
+
+```
+
+
+## Tangleplot
+```{r}
+assoc2 = left_join(mat_1_long, dplyr::select(RRA2, Species, MSW93_Binomial))%>%unique()
+assoc2 = assoc2[,c(4,2)]
+assoc2$OTU = as.character(assoc2$OTU)
+assoc2$MSW93_Binomial = as.character(assoc2$MSW93_Binomial)
+
+
+assoc2 = assoc2[order(assoc2$MSW93_Binomial),] # That didn't work
+assoc3 = assoc2
+
+# update order
+species_cols = data.frame(sp = levels(as.factor(assoc2$MSW93_Binomial)), color = animal_colors[c(13,11,3,2,5,16,10, 9,8,12,18,7,4,15,17,1,6,14)])
+animal_colors[c()]
+assoc3 = left_join(assoc2,species_cols, by=c("MSW93_Binomial"="sp"))
+
+cophyloplot(tree, treeNJ_MOTU, assoc=as.matrix(assoc2), use.edge.length = F, space=100, rotate=F, col=assoc3$color, gap=0.05, length.line=1, font=1, show.tip.label = F)
+
+
+```
