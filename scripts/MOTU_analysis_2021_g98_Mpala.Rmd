@@ -1849,8 +1849,30 @@ for(i in 1:length(levels(RRA2$Species))){
 }
 par(mfrow=c(1,1))
 
-# waterbuck is exceptionally low -- exclude
 
+find_asympt = function(sp){
+  buf = RRA2 %>% 
+  filter(Species==sp) %>% 
+  dplyr::select(MOTU_1:MOTU_557) %>% 
+  mutate_at(vars(MOTU_1:MOTU_557), funs(round(.*100, 0))) %>% 
+  specaccum()
+bm1 = fitspecaccum(buf, "lomolino")
+asmp = coef(bm1)[1]
+n = RRA2 %>% 
+  group_by(Species) %>% 
+  summarise(n()) %>% 
+  filter(Species==sp)
+vec = c(asmp, n)
+
+return(vec)
+}
+
+lapply(netdata$Species[-18],FUN = find_asympt) %>% 
+  unlist() %>% 
+  matrix(ncol=3, byrow = T) %>% 
+  as.data.frame(row.names=netdata$Species[-18]) %>% 
+  filter(V3<V1) %>% 
+  mutate(pct = V3/V1)
 ```
 
 
@@ -1967,7 +1989,7 @@ plot(subhost)
 
 c2 = igraph::closeness(subhost)
 c_data=data.frame(c = c2, species=names(c2))
-c_data = c_data[-which(c_data$species %in% c("Camel", "Hippo")),]
+c_data = c_data[-which(c_data$species %in% c("Camel", "Hippo", "Waterbuck")),]
 
 nd2 = left_join(c_data, netdata[,c(1,6:18)])
 comp.data2 = comparative.data(tree, nd2, names.col="MSW93_Binomial", vcv.dim=3, warn.dropped=TRUE)
