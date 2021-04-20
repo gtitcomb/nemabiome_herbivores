@@ -38,7 +38,7 @@ RRAtab$X = OTUtabsmall$X
 head(RRAtab)
 dim(RRAtab)
 
-# Filter out >1% RRA
+# Filter out <1% RRA
 RRAtab_filt <- RRAtab %>% mutate_at(vars(MOTU_1:MOTU_568), funs(ifelse(.<0.01,0,.)))
 
 # How many OTUs are now zero?

@@ -9,12 +9,12 @@ make_MCMC_summary = function(MCMCmodel){
                         as.data.frame(summary_output$Rcovariances))
   mod_table = mod_table %>% 
     round(2)
-  DIC = c(round(summary_output$DIC,2), rep("", (dim(mod_table)[1]-1)))
+  DIC = c(round(summary_output$DIC,2), rep("", (dim(mod_table)[2]-1)))
   lambda = MCMCmodel$VCV[,'phylo']/
     (MCMCmodel$VCV[,'phylo']+MCMCmodel$VCV[,'units']+MCMCmodel$VCV[,'MSW93_Binomial'])
   Lambda = c(round(mean(lambda),2), round(HPDinterval(lambda)[1], 2),
              round(HPDinterval(lambda)[2],2),
-             rep("", (dim(mod_table)[1]-3)))
+             rep("", (dim(mod_table)[2]-3)))
   names(DIC)=names(mod_table)
   names(Lambda)=names(mod_table)
   mod_table = rbind(mod_table, DIC, Lambda)
