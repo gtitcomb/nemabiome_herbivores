@@ -137,7 +137,7 @@ richgraph = tab_present %>%
   scale_fill_manual(values=animal_colors)+
   scale_color_manual(values=animal_colors)+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
-  scale_y_continuous(limits = c(0,17))+
+  scale_y_continuous(limits = c(0,(max(tab_present$richness)+1)))+
   labs(x="Host Species",y="Richness")
 richgraph
 
@@ -181,7 +181,7 @@ temp = cor.test(compare$mean, compare$richness, method = "spearman")
 result_1 = unlist(temp) %>% as.data.frame()
 
 prev_rich_graph = gridExtra::grid.arrange(prevgraph, richgraph, ncol=2)
-#ggsave(here(paste("plots_temp/prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
+ggsave(here(paste("plots_temp/prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
 
 
 
