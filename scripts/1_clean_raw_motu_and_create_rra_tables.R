@@ -295,10 +295,12 @@ table_2 = table_2 %>%
 # exclude spurious hippo, waterbuck, and hybrid zebra
 table_1 = table_1 %>% 
   filter(Species != "Hybrid Zebra") %>% 
+  filter(Species != "Hybrid zebra") %>% 
   filter(Species != "Waterbuck") %>% 
   filter(Sample != "MRC_17_HIP_93")
 table_2 = table_2 %>%
   filter(Species != "Hybrid Zebra") %>% 
+  filter(Species != "Hybrid zebra") %>% 
   filter(Species != "Waterbuck") %>% 
   filter(Sample != "MRC_17_HIP_93")
 
