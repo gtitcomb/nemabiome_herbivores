@@ -161,7 +161,7 @@ sp_counts = plate_plan %>%
 sum(sp_counts$n)
 
 # run microDecon
-set.seed(123); decontaminated = decon(data = read_to_decontam, numb.blanks = 51, numb.ind =333, taxa=F, runs=3)
+set.seed(0); decontaminated = decon(data = read_to_decontam, numb.blanks = 51, numb.ind =333, taxa=F, runs=2)
 
 # average read depth for samples, post filtering
 mean(colSums(decontaminated$decon.table[,-c(1:2)]))
@@ -220,8 +220,8 @@ rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
   geom_path()+
   theme_bw(base_size=14)+
   labs(x="RRA Threshold", y="Number of mOTUs in dataset")+
-  geom_vline(xintercept = c(0.001, 0.02), linetype="dotted", col="red", size=1)
-
+  geom_vline(xintercept = c(0.002, 0.02), linetype="dotted", col="red", size=1)
+rra_elbow
 #ggsave(here("plots/rra_elbow.png"), dpi=300, height=5, width=5, device="png")
 
 
@@ -229,7 +229,7 @@ rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
 
 # remove RRA lower threshold
 clust_reads_n1 = clust_reads_n %>% 
-  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. <0.001, 0, .)))
+  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. <0.002, 0, .)))
 
 # remove RRA upper threshold
 clust_reads_n2 = clust_reads_n %>% 
@@ -260,31 +260,31 @@ end2 = dim(table_2)[2]-15
 
 
 #quick mds visual
-# nmds1 = metaMDS(table_1[,2:end1])
-# plot(nmds1)
-# levels(as.factor(table_1$Species))
-# mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads.x)
-# colors = c( "violet", "orange", "violet","blue","magenta", "blue2", "green", "orange", "blue", "magenta",
-#            "blue", "green", "magenta", "blue", "blue", "blue", "magenta", "red", "green", "magenta")
-# ggplot(mds_data1, aes(x=x1, y=x2))+
-#   geom_point(aes(col=species), alpha=0.2)+
-#   ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
-#   scale_fill_manual(values=colors)+
-#   scale_color_manual(values=colors)+
-#   theme_bw()
+nmds1 = metaMDS(table_1[,2:end1])
+plot(nmds1)
+levels(as.factor(table_1$Species))
+mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads.x)
+colors = c( "violet", "orange", "violet","blue","magenta", "blue2", "green", "orange", "blue", "magenta",
+           "blue", "green", "magenta", "blue", "blue", "blue", "magenta", "red", "green", "magenta")
+ggplot(mds_data1, aes(x=x1, y=x2))+
+  geom_point(aes(col=species), alpha=0.2)+
+  ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
+  scale_fill_manual(values=colors)+
+  scale_color_manual(values=colors)+
+  theme_bw()
+
 # 
-# 
-# nmds2 = metaMDS(table_2[-59,2:end2])
-# plot(nmds2)
-# mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type[-59], species=table_2$Species[-59], sample=table_2$Sample[-59], reads=table_2$Reads.x[-59])
-# ggplot(mds_data2, aes(x=x1, y=x2))+
-#   geom_point(aes(col=species), alpha=0.2)+
-#   ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
-#   scale_fill_manual(values=colors)+
-#   scale_color_manual(values=colors)+
-#   theme_bw()
-# 
-# table_2[which(mds_data2$x1 < -5),]
+nmds2 = metaMDS(table_2[,2:end2])
+plot(nmds2)
+mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type, species=table_2$Species, sample=table_2$Sample, reads=table_2$Reads.x)
+ggplot(mds_data2, aes(x=x1, y=x2))+
+  geom_point(aes(col=species), alpha=0.2)+
+  ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
+  scale_fill_manual(values=colors)+
+  scale_color_manual(values=colors)+
+  theme_bw()
+
+table_2[which(mds_data2$x1 < -5),]
 
 # exclude remaining controls
 table_1 = table_1 %>% 

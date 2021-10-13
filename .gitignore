@@ -6,3 +6,8 @@ nematodes_2018_assembled_setid_filterE2_nl_uniq_c10_ann_assignEMBL_nematoda_suma
 PCR_plate_plan_Georgia-2_corrected.xlsx
 LongOrdinationResults.csv
 99_pct_dataset.tab
+data/plate_plan_mpala_nematodes.csv
+data/raw_motu_table_mpala_nematodes.csv
+data/new_mammal_tree_pruned.newick
+data/Nematode_ITS2_1.0.0_dada2.fasta
+data/host_metadata.csv

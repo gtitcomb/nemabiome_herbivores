@@ -1,0 +1,8 @@
+.
+194.619135198786
+0.000383089468993709
+0.761496157844625
+0
+two.sided
+"Spearman's rank correlation rho"
+"compare$mean and compare$richness"
