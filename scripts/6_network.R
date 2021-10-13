@@ -1,7 +1,19 @@
+# 6. Create Networks
+# Georgia Titcomb
 
+#########
 library(igraph)
 library(MuMIn)
 library(fitdistrplus)
+library(tidyverse)
+library(ape)
+library(caper)
+
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
+library(here)
+#####
 
 # Import files
 # tree files
@@ -22,6 +34,7 @@ tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 treeNJ = treeNJ1
 data_table = table_1
 tipdata = tipdata1
+threshold_used = "0.002"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 endmotu = names(data_table)[dim(data_table)[2]-27]
@@ -58,7 +71,7 @@ find_threshold = function(avg_otu_table, vector_to_try){
   return(store)
 }
 
-find_threshold(avgRRA, seq(from = 0, to = 0.05, by=0.01)) %>% 
+find_threshold(avgRRA, seq(from = 0, to = 0.03, by=0.002)) %>% 
   ggplot(aes(x=threshold, y=n_links))+
   geom_line()+
   scale_y_continuous(limits=c(0,1100))+
@@ -69,7 +82,7 @@ find_threshold(avgRRA, seq(from = 0, to = 0.05, by=0.01)) %>%
 
 # set average RRA thresh.
 avgRRA2 = avgRRA %>% 
-  mutate_at(vars(mOTU_1:endmotu), funs(ifelse(.<0.02,0,.)))
+  mutate_at(vars(mOTU_1:endmotu), funs(ifelse(.< as.numeric(threshold_used),0,.)))
 
 # calculate prevalence of mOTU instances
 # nRRA = data_table %>%
@@ -86,12 +99,12 @@ bin_avgRRA = avgRRA2 %>%
 
 bin_avgRRA[which.max(bin_avgRRA)]
 tipdata %>% 
-  filter(mOTU=="mOTU_5")
+  filter(mOTU=="mOTU_1")
 
 # Create a plot showing the distribution
 bin_avgRRA = bin_avgRRA %>% 
   as.data.frame() %>% 
-  rename(`.` = "N_Hosts")
+  dplyr::rename("N_Hosts"=".")
 bin_avgRRA$mOTU = row.names(bin_avgRRA)
 bin_avgRRA = left_join(bin_avgRRA, tipdata)
 
@@ -115,7 +128,7 @@ bin_avgRRA$mOTU = factor(bin_avgRRA$mOTU, levels=MOTUorder)
 psite_distribution = ggplot(bin_avgRRA, aes(x=N_Hosts, y=mOTU))+
   geom_point(aes(col=new_tax), size=1.6)+
   geom_line(aes(col=new_tax, group=new_tax), size=1)+
-  scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))+
+  scale_x_continuous(breaks=c(1:max(bin_avgRRA$N_Hosts)))+
   scale_y_discrete(labels=NULL)+
   #theme_classic(base_size = 14)+
   theme(panel.grid.major = element_blank(),
@@ -154,20 +167,21 @@ distribution_table = data.frame(Distribution = c("Log-Normal", "Exponential", "N
            AIC = c(fit.lnorm$aic, fit.exp$aic, fit.nb$aic, fit.pois$aic))
 
 plot(fit.lnorm); plot(fit.exp); plot(fit.nb); plot(fit.pois)
+result_2 = distribution_table
 
-
+write_delim(result_2, here(paste("docs/distribution_fit",threshold_used,".txt",sep="")))
 
 ### Create Network ###
 
 
 # need to put all in one column
-mat_1_long = avgRRA3 %>% 
+mat_1_long = avgRRA2 %>% 
   pivot_longer(mOTU_1:endmotu)
 head(mat_1_long)
 names(mat_1_long)=c("Species", "mOTU", "RRA")
 
 # add species information
-mat_1_long = mat_1_long %>% left_join(tipdata)
+mat_1_long = mat_1_long %>% left_join(tipdata, by="mOTU")
 
 # format taxa for plotting
 # take the motu id and paste to taxa
@@ -179,7 +193,7 @@ mat_1_long = mat_1_long %>%
   filter(RRA > 0)
 
 # use taxa id
-mat_1_long = mat_1_long %>% dplyr::select(Species, Taxa2, RRA)
+mat_1_long = mat_1_long %>% dplyr::select(Species.x, Taxa2, RRA)
 
 g = graph.data.frame(mat_1_long, directed=FALSE)
 
@@ -191,18 +205,17 @@ V(g)$frame.color =  "white"
 V(g)$label.dist = 0.5
 E(g)$weight = E(g)$RRA
 
-set.seed(123)
-plot(g,
+set.seed(123);plot(g,
      vertex.label.cex = 0.8,
      vertex.size=ifelse(V(g)$type,1,7),
      vertex.label.color = ifelse(V(g)$type,"gray","black"),
      edge.width=E(g)$weight,
      layout=layout_with_fr)
 
-
 # use at least 8 samples
 data_table %>% group_by(Species) %>% summarize(n()) 
 
+names(mat_1_long)[1]="Species"
 mat_2_long = mat_1_long %>% 
   filter(Species != "Kudu")
 
@@ -229,6 +242,10 @@ E(g)$weight = E(g)$RRA*10
 mat_2_long$Species = as.factor(mat_2_long$Species)
 plot_names = V(g)$name %in% c(levels(mat_2_long$Species), mat_2_long$Taxa2[which(mat_2_long$RRA>0.1)])
 
+
+# Save Network Image
+
+pdf(here(paste("plots/bipartite_network",threshold_used,".pdf",sep="")))
 set.seed(123); plot(g,
      vertex.label = ifelse(plot_names, V(g)$name, ""),
      vertex.label.cex = 0.8,
@@ -236,7 +253,7 @@ set.seed(123); plot(g,
      vertex.label.color = ifelse(V(g)$type,"gray60","black"),
      edge.width=E(g)$weight,
      layout=layout_with_fr)
-
+dev.off()
 
 
 
@@ -248,7 +265,7 @@ g2 = bipartite_projection(g, types=E(g)$type)
 V(g2$proj1)$name
 comparisons = combn(V(g2$proj1)$name,2, simplify=T) %>% t()
 
-lala = as_data_frame(g, "edges")
+lala = igraph::as_data_frame(g, "edges")
 df = lala %>% 
   dplyr::select(from, to, RRA) %>% 
   pivot_wider(names_from = "to", values_from = "RRA", values_fill=0) # takes a second
@@ -404,18 +421,18 @@ V(hostgraph)$frame.color =  "white"
 V(hostgraph)$label.dist = 0
 
 
-#pdf(here("g98_plots/hostgraph.pdf"), width=8, height=8)
+pdf(here(paste("plots/hostgraph",threshold_used,".pdf",sep="")), width=8, height=8)
 set.seed(123); plot(hostgraph,
      vertex.label.cex = 1.5,
      vertex.size=10,
      vertex.label.color = "gray30",
-     edge.width=E(hostgraph)$weight*100)
-#dev.off()
+     edge.width=E(hostgraph)$weight*200)
+dev.off()
 
 
 # create models with host information
+
 ### C
-library(caper)
 # exclude cattle because of parasite treatment
 
 netdata2 = netdata_all %>% 
@@ -433,21 +450,21 @@ correlations = data.frame(S = c(dcor$statistic,ecor$statistic,bcor$statistic,cco
                           rho =c(dcor$estimate,ecor$estimate,bcor$estimate,ccor$estimate),
                           P = c(dcor$p.value,ecor$p.value,bcor$p.value,ccor$p.value),
                           test = c("Degree","Eigenvector","Betweenness","Closeness"))
-correlations %>% 
+result_1 = correlations %>% 
   pivot_longer(S:P, names_to="Correlation Details", values_to="value") %>% 
   pivot_wider(names_from=test, values_from=value)
 
-
+write_delim(result_1, here(paste("docs/centrality_cors",threshold_used, ".txt", sep="")))
 
 ### Models ###
 
 # multiply closeness because it is very small
 comp.data$data$c = comp.data$data$c * 100
 
-# to avoid overfitting, test individual contributions
+# don't use log(BM) and log(RS) at the same time
 c_mod = pgls(c~ GUT + UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data = comp.data, lambda=1, kappa=1, delta=1)
 dredge(c_mod)
-c_mod = pgls(c~ 1, data=comp.data, lambda=1, kappa=1, delta=1)
+c_mod = pgls(c~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
 summary(c_mod)
 cmodval = as.data.frame(summary(c_mod)$coefficients %>% round(.,3))
 cmodval$Predictor = row.names(cmodval)
@@ -473,7 +490,7 @@ summary(b_mod)
 bmodval$Metric = "Betweenness"
 
 
-# degree
+# degree -- not relevant for 0.002 dataset
 d_mod = pgls(d ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data=comp.data, lambda=1,kappa=1,delta=1)
 dredge(d_mod)
 d_mod = pgls(d ~ 1, data=comp.data, lambda=1,kappa=1,delta=1)
@@ -483,55 +500,44 @@ dmodval$Metric = "Degree"
 summary(d_mod)
 
 
-ggplot(netlong3, aes(x=log(RS_KM2), y=Value))+
-  theme_bw(base_size=14)+
-  geom_smooth(aes(linetype=GUT), method="lm", se=F, size=1, col="gray20")+
-  geom_point(aes(col=MSW93_Family, shape=GUT), alpha=0.6, size=4)+
-  scale_color_manual(values=c("dodgerblue","goldenrod","green3","maroon3","goldenrod1","greenyellow","green4"))+ # use animalcols2 for values if color
-  facet_wrap(~Measure, scales="free_y", labeller = labeller(Measure=measuredict))+
-  labs(x="log(Range Size)")
-
-
 # collect values in table
 network_table_vals = as.data.frame(rbind(dmodval, emodval, bmodval, cmodval))
 
 network_table_vals = network_table_vals %>% 
-  mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,2))) %>% 
+  mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,3))) %>% 
   mutate(M = paste(Estimate, " +/- ", `Std. Error`), V = paste(`t value`, " (", `Pr(>|t|)`, ")", sep="")) %>% 
   dplyr::select(Metric, Predictor, M, V) %>% 
   pivot_longer(M:V, names_to="Measure", values_to = "Value") %>% 
   dplyr::select(Metric, Predictor, Value)
 network_table_vals
 
-#write.csv(network_table_vals, here("g98_plots/network_table_vals.csv"), row.names = F)
 
+# export table
+write.csv(network_table_vals, here(paste("docs/network_table_vals",threshold_used,".csv",sep="")), row.names = F)
 
-
-dim(comp.data$data)
-
+### Cor between log(BM) and log(RS)
 m1 = lm(c ~ GS+GUT+log(BM_KG)+log(RS_KM2), data=comp.data$data)
 summary(m1)
 car::vif(m1)
 plot(log(comp.data$data$BM_KG) ~ log(comp.data$data$RS_KM2))
 cor.test(comp.data$data$BM_KG, comp.data$data$RS_KM2)
 
-
 #####################################################################
 
 netdata$sc = BBmisc::normalize(netdata$c, method = "range", range=c(0,1))
-netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
+#netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
 netdata$se = BBmisc::normalize(netdata$e, method="range", range=c(0,1))
 netdata$sb = BBmisc::normalize(netdata$b, method="range", range=c(0,1))
-netdata$tot = netdata$sc+netdata$sd+netdata$se+netdata$sb
-neworder = netdata$species[order((netdata$sc)+(netdata$sd)+(netdata$se)+(netdata$sb))]
+netdata$tot = netdata$sc+netdata$se+netdata$sb
+neworder = netdata$species[order((netdata$sc)+(netdata$se)+(netdata$sb))]
 neworder = netdata$species[order(netdata$tot)]
 
-netlongsc = tidyr::pivot_longer(netdata, cols=c(sc,sb,sd,se), names_to="Measure", values_to="Value")
+netlongsc = tidyr::pivot_longer(netdata, cols=c(sc,sb,se), names_to="Measure", values_to="Value")
 
 netlongsc$species = factor(netlongsc$species, levels = neworder)
 
 netlongsc$Measure=as.factor(netlongsc$Measure)
-levels(netlongsc$Measure)=c("Betweenness","Closeness","Degree","Eigenvector")
+levels(netlongsc$Measure)=c("Betweenness","Closeness","Eigenvector")
 
 change = match(c("Grevys zebra","DikDik","Grants gazelle"),as.character(levels(netlongsc$species)))
 levels(netlongsc$species)[change]=c("Grevy's zebra","Dik-dik","Grant's gazelle")
@@ -541,17 +547,14 @@ centscore = ggplot(netlongsc, aes(x=species, y=Measure))+
   scale_fill_viridis_c(option="A")+
   labs(x="")+
   theme_bw(base_size=18)+
-  theme(aspect.ratio = 1/3.5, axis.text.x=element_text(angle=90,hjust=1, vjust=0))
+  theme(aspect.ratio = 1/5, axis.text.x=element_text(angle=90,hjust=1, vjust=0))
 
 centscore
 
 
 
 #### Sharing Matrix ####
-
-# Using a more stringent threshold
-
-lar = avgRRA3 %>% 
+lar = avgRRA2 %>% 
   pivot_longer(mOTU_1:endmotu) %>% 
   filter(value >0)
 g3 = graph_from_data_frame(lar, directed=F)
@@ -589,9 +592,11 @@ levels(proj_host_data3$Species2)[c(2,6,14)]=c("Dik-dik","Grant's gazelle","Grevy
 share_matrix = ggplot(proj_host_data3, aes(x=Species1, y=Species2))+
   geom_tile(aes(fill=N_Shared))+
   scale_fill_gradient(low="gray90", high="red")+
-  geom_text(aes(label=round(N_Shared, 2)))+
+  geom_text(aes(label=ifelse(N_Shared >0, round(N_Shared, 2),"")))+
   theme_bw(base_size=14)+
   theme(axis.text.x = element_text(angle=90, hjust=0, vjust=0))
 
 share_matrix
 
+ggsave(here(paste("plots/share_matrix",threshold_used,".png", sep="")),
+       share_matrix, dpi=300, device="png")

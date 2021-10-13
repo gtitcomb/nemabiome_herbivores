@@ -1,14 +1,19 @@
 
-# Quality Control Checks
+# 1. Clean Raw mOTU Data and Create RRA Table
 # 6 October 2021
 # Georgia Titcomb
 
-# Use Ctrl+Shift+F10 to clear
+# Use Ctrl+Shift+F10 to refresh whole workspace
 ##################
-library(here) # navigate to parent folder before loading this library
+
 library(microDecon)
 library(tidyverse)
 library(vegan)
+
+# navigate to parent folder before loading this library
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
+library(here) 
 
 ##################
 

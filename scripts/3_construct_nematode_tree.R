@@ -1,8 +1,10 @@
 
-# 3. Construct nematode tree for later analyses
+# 3. Construct Nematode Tree
+# 6 October 2021
+# Georgia Titcomb
 
 # Clear environment
-#CTRL+SHIFT+F10
+# CTRL+SHIFT+F10
 
 # this script depends on script 1
 
@@ -14,6 +16,9 @@ library(phyloseq)
 library(QsRutils)
 library(phangorn)
 library(seqinr)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
 library(here)
 
 # read in data
@@ -32,9 +37,10 @@ seqsmall = motuinfo %>%
 seqsmall = dplyr::select(seqsmall, id, cluster_sumatra98, sequence) 
 seqsmall$MOTU = paste("mOTU_",seqsmall$cluster_sumatra98, sep="")
 
+# all motus
 # use only motus in table
 seqsmall = seqsmall %>% 
-  filter(MOTU %in% motu_names)
+ filter(MOTU %in% motu_names)
 
 # assign taxonomy
 # read in latest database
@@ -101,7 +107,7 @@ mt2[order(mt2$BIC),][1:10,]
 
 env = attr(mt2, "env")
 ls(envir=env)
-(fit = eval(get("K81+G+I", env), env))
+(fit = eval(get("K80+G+I", env), env))
 
 # Use model
 dna_distbest = ape::dist.dna(aldna, model="K80", gamma=T) #note, gamma correction not available for K81
@@ -174,9 +180,8 @@ nems_complete3 = left_join(nems_complete2, nems_complete)
 treeNJ$edge.length[treeNJ$edge.length<0] = 0
 plot(treeNJ, cex=0.6, show.tip=T)
 
-
 write.tree(treeNJ, file=here("data/treeNJ_K80_gamma_table_1.tree")) 
-write.csv(nems_complete2, file=here("data/nem_taxa_table_1.csv"), row.names=F)
+write.csv(nems_complete3, file=here("data/nem_taxa_table_1.csv"), row.names=F)
 
 # prune tree to table 2 taxa
 table_2_nems_exclude = nems_complete3[-which(nems_complete3$mOTU %in% names(table_2)[-c(dim(table_2)[2]-1,dim(table_2)[2])]),]

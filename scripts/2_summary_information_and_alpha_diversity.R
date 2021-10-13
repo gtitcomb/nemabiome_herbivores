@@ -1,10 +1,12 @@
 
-# 2. Summary information and alpha diversity
+# 2. Summary Information and Alpha Diversity
+# 6 October 2021
+# Georgia Titcomb
 
-# Use CTRL+SHIFT+F10 to clear all
+# Use Ctrl+Shift+F10 to restart R
 
 # this script depends on script 1
-
+#####################
 library(vegan)
 library(binom)
 library(tidyverse)
@@ -13,7 +15,11 @@ library(DHARMa)
 library(ape)
 library(MCMCglmm)
 library(emmeans)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
 library(here) # ensure wd is in parent folder before running
+#####################
 
 # A. read in RRA tables and combine with metadata
 
@@ -61,9 +67,9 @@ cor.test(tab1$richness, tab2$richness)
 ##### Dataset-specific ############# 
 
 # decide which data frame
-tab = tab1
+tab = tab2
 # type in the threshold as a character to use for saving plots correctly
-threshold_used = "0.001" 
+threshold_used = "0.02" 
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 
@@ -181,7 +187,7 @@ temp = cor.test(compare$mean, compare$richness, method = "spearman")
 result_1 = unlist(temp) %>% as.data.frame()
 
 prev_rich_graph = gridExtra::grid.arrange(prevgraph, richgraph, ncol=2)
-ggsave(here(paste("plots_temp/prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
+ggsave(here(paste("plots/prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
 
 
 
@@ -453,7 +459,7 @@ ggplot(MPprevinfoMCMC, aes(x=GS, y=pred))+
 
 gpplots = gridExtra::grid.arrange(prevplotgp, rich_sp_plot, ncol=2)
 
-ggsave(here(paste("plots_temp/sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=7, units="in")
+ggsave(here(paste("plots/sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=7, units="in")
 
 
 
@@ -482,7 +488,7 @@ names(TMBvars) = c("Prevalence","Richness")
 
 ## Models MCMC
 MCMCmods2 = MCMCmods %>% 
-  mutate_at(vars(post.mean:pMCMC), funs(round(.,2))) %>% 
+  mutate_at(vars(post.mean:pMCMC), funs(round(.,3))) %>% 
   mutate(CI = paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
   mutate(M = paste(post.mean, " (",pMCMC, ")", sep="")) %>% 
   pivot_longer(cols=c(M,CI), names_to="Measure", values_to="Value") %>% 
@@ -490,7 +496,7 @@ MCMCmods2 = MCMCmods %>%
 
 ## Variance
 MCMCvars2 = MCMCvars %>% 
-  mutate_at(vars(post.mean:eff.samp), funs(round(.,2))) %>% 
+  mutate_at(vars(post.mean:eff.samp), funs(round(.,3))) %>% 
   mutate(CI=paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
   mutate_at(vars(post.mean), funs(as.character(.))) %>% 
   pivot_longer(cols=c(post.mean, CI), names_to="Measure", values_to="Value") %>% 
@@ -499,7 +505,7 @@ MCMCvars2
 
 ## TMB
 TMBmods2 = TMBmods %>% 
-  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,2))) %>% 
+  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,3))) %>% 
   mutate(M_SE=paste(Estimate, `Std. Error`, sep=", ")) %>% 
   mutate(Z_p = paste(`z value`," (",`Pr(>|z|)`,")",sep="")) %>% 
   pivot_longer(cols=c(M_SE,Z_p), names_to="Measure", values_to="Value") %>% 
@@ -527,4 +533,7 @@ names(MCMCvars2) = c("Predictor", "MCMC Prevalence", "eff.samp.prev", "TMB Preva
 
 full_results_table = rbind(allMods, MCMCvars2)
 
+# cleaned results table
 write.csv(full_results_table, here(paste("docs/prev_rich_model_results",threshold_used,".csv", sep="")), row.names = F)
+# lambda
+write_delim(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/prev_rich_lambda",threshold_used,".txt")))

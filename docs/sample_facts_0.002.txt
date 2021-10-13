@@ -3,7 +3,7 @@ Fact Stat
 "Ct <35 N" 357
 "N selected from qPCR" 309
 "N metabarcoded" 320
-Depth 17404
-"N Dropped" 43
-"N pos" 279
+Depth 17339
+"N Dropped" 41
+"N pos" 281
 "N mOTU" 90

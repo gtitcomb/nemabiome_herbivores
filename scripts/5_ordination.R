@@ -1,10 +1,17 @@
 
 # 5 Ordinations
 
+#######
 library(phyloseq)
 library(tidyverse)
 library(vegan)
 library(ggConvexHull)
+library(ape)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
+library(here)
+######
 
 # this script depends on 1 and 3
 
@@ -24,9 +31,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 
@@ -61,8 +69,6 @@ ufcmat = as.matrix(ufc)
 rownames(ufcmat)=data_table$Sample
 colnames(ufcmat)=data_table$Sample
 
-#write.csv(ufcmat, here("data/g98_UW_unifrac_dists_2021_check2.csv"),row.names = T)
-
 
 # Species level
 data_table = data_table %>% 
@@ -87,8 +93,6 @@ ufcmat_agg = as.matrix(ufc_agg)
 rownames(ufcmat_agg)=otuagg$Species
 colnames(ufcmat_agg)=otuagg$Species
 
-#write.csv(ufcmat_agg, here("data/g98_UW_unifrac_dists_sp_2021_check2.csv"))
-
 
 
 ### Ordinate ####
@@ -96,21 +100,30 @@ colnames(ufcmat_agg)=otuagg$Species
 ### Individual ####
 
 ### mOTU table ###
+
+optimizeMDS = function(data_table, k_vector){
+  # create empty df
+  ord_elbow = data.frame(stress = rep(0,length(k_vector)),
+                         dimensions = rep(0,length(k_vector)))
+  for(i in 1:length(k_vector)){
+    ordi = metaMDS(dplyr::select(data_table, mOTU_1:endmotu), k=k_vector[i], distance="bray", binary=F, autotransform = F, try=5, trymax=5)
+    ord_elbow$stress[i]=ordi$stress
+    ord_elbow$dimensions[i]=k_vector[i]
+  }
+  return(ord_elbow)
+}
+
+elbow_ord = optimizeMDS(data_table, c(1,2,3,4,5,6,7,8,9,10))
+
+ggplot(elbow_ord, aes(x=dimensions, y=stress))+
+  geom_point()+
+  geom_line()
+
+# use three 
 ordMRC = metaMDS(dplyr::select(data_table, mOTU_1:endmotu), k=3, distance="bray", binary=F, autotransform = F)
-ordMRC2 = metaMDS(dplyr::select(data_table, mOTU_1:endmotu), k=2, distance="bray",binary=F, autotransform = F)
-
-stressplot(ordMRC)
-stressplot(ordMRC2)
-
-gof3 = goodness(ordMRC)
-gof2 = goodness(ordMRC2)
-plot(gof2 ~ gof3);abline(0,1)
-
-plot(ordMRC);points(ordMRC, display="sites",cex=gof3*100)
-plot(ordMRC2);points(ordMRC2, display="sites",cex=gof2*100) # probably two points benefit
-
-pro3 = procrustes(ordMRC, ordMRC2)
-plot(pro3) 
+gof = goodness(ordMRC2)
+mean(gof)
+plot(ordMRC);points(ordMRC, display="sites",cex=gof*100)
 
 # create data tables to use for ggplot
 mdsplot = data.frame(x1 = ordMRC$points[,1], x2=ordMRC$points[,2], x3=ordMRC$points[,3], species = data_table$Species, period=data_table$Period, sample=data_table$Sample)
@@ -126,49 +139,45 @@ MRCord1 = ggplot(mdsplot, aes(x=x1, y=x2))+
   geom_point(aes(col=species), size=2)+
   geom_convexhull(aes(fill=species), alpha=0.2)+
   geom_point(data=spmds, aes(x=NMDS1, y=NMDS2), col="gray", alpha=0.8)+
+  annotate(geom="text", x=min(mdsplot$x1)+abs(0.15*min(mdsplot$x1)),
+           y=min(mdsplot$x2), label=paste("Stress = ",round(ordMRC$stress,2)))+
   ggrepel::geom_text_repel(data=spmds, aes(x=NMDS1, y=NMDS2, label=Taxa2), size=2.5, fontface="italic")+
   scale_fill_manual(values=animal_colors)+
   scale_color_manual(values=animal_colors)+
   theme_bw()+
   coord_fixed(ratio = 1)+
   guides(fill="none", col="none")+
-  labs(x="NMDS 1", y="NMDS 2")+
-  annotate(geom="text", x=min(mdsplot$x1)+abs(0.15*min(mdsplot$x1)), y=min(mdsplot$x2), label=paste("Stress = ",round(ordMRC$stress,2)))
+  labs(x="NMDS 1", y="NMDS 2")
 
 MRCord2 = ggplot(mdsplot, aes(x=x2, y=x3))+
   geom_point(aes(col=species), size=2)+
   geom_convexhull(aes(fill=species), alpha=0.2)+
   geom_point(data=spmds, aes(x=NMDS1, y=NMDS3), col="gray", alpha=0.8)+
+  annotate(geom="text", x=min(mdsplot$x2)-abs(0.5*min(mdsplot$x2)), y=min(mdsplot$x3), label=paste("Stress = ",round(ordMRC$stress,2)))+
   ggrepel::geom_text_repel(data=spmds, aes(x=NMDS2, y=NMDS3, label=Taxa2), size=2.5, fontface="italic")+
   scale_fill_manual(values=animal_colors)+
   scale_color_manual(values=animal_colors)+
   theme_bw()+
   coord_fixed(ratio = 1)+
   guides(fill="none", col="none")+
-  labs(x="NMDS 2", y="NMDS 3")+
-  annotate(geom="text", x=min(mdsplot$x1)+abs(0.5*min(mdsplot$x2)), y=min(mdsplot$x3), label=paste("Stress = ",round(ordMRC$stress,2)))
+  labs(x="NMDS 2", y="NMDS 3")
 
-gridExtra::grid.arrange(MRCord1,MRCord2,ncol=1)
+mOTU_NMDS = gridExtra::grid.arrange(MRCord1,MRCord2,ncol=2, widths=c(1.1,1))
+
+ggsave(here(paste("plots/mOTU_NMDS",threshold_used,".png")), mOTU_NMDS, width=12, height=5, dpi=300, device="png")
+
+
 
 
 
 ### UniFrac Distances ###
 unif_ordMRC = metaMDS(ufcmat, k=3, distance="jaccard", binary=T, autotransform = F)
-unif_ordMRC2 = metaMDS(ufcmat,  distance="jaccard", binary=T, autotransform = F)
+#unif_ordMRC2 = metaMDS(ufcmat,  distance="jaccard", binary=T, autotransform = F)
 
 stressplot(unif_ordMRC)
-stressplot(unif_ordMRC2)
+plot(unif_ordMRC);points(unif_ordMRC, display="sites")
 
-gof3 = goodness(unif_ordMRC)
-gof2 = goodness(unif_ordMRC2)
-plot(gof2 ~ gof3);abline(0,1)
-
-plot(unif_ordMRC);points(unif_ordMRC, display="sites",cex=gof3*100)
-plot(unif_ordMRC2);points(unif_ordMRC2, display="sites",cex=gof2*100) # probably two points benefit
-
-pro3 = procrustes(unif_ordMRC, unif_ordMRC2)
-plot(pro3) 
-
+ 
 # create data table
 unif_mdsplot = data.frame(x1 = unif_ordMRC$points[,1], x2=unif_ordMRC$points[,2],x3=unif_ordMRC$points[,3], species = data_table$Species, period=data_table$Period, sample=data_table$Sample)
 
@@ -185,6 +194,8 @@ MRCord = ggplot(unif_mdsplot, aes(x=x1, y=x2))+
 MRCord
 
 
+
+
 #### Test Variation Explained by Species ####
 
 # mOTU table
@@ -197,6 +208,8 @@ MRCdist = vegdist(dplyr::select(data_table, mOTU_1:endmotu), distance="bray")
 MRCdiv = adonis2(MRCdist ~ Species,  data=envMRC, permutations=999)
 MRCdiv
 
+result_1 = as.data.frame(MRCdiv)
+
 
 # UniFrac
 
@@ -205,6 +218,7 @@ MRCdiv
 MRCdiv_unif = adonis2(ufcmat ~ Species,  data=envMRC, permutations=999)
 MRCdiv_unif
 
+result_2 = as.data.frame(MRCdiv_unif)
 
 
 
@@ -222,6 +236,11 @@ motu_agg = data_table %>%
   group_by(Species) %>% 
   summarize_at(vars(mOTU_1:endmotu), funs(mean))
 
+elbow_mds_agg = optimizeMDS(motu_agg, c(1:10))
+ggplot(elbow_mds_agg, aes(x=dimensions, y=stress))+
+  geom_point()+
+  geom_line()
+
 ordMRCagg = metaMDS(dplyr::select(motu_agg, mOTU_1:endmotu), k=2, distance="bray", binary=F, autotransform = F)
 stressplot(ordMRCagg)
 plot(ordMRCagg);points(ordMRCagg, display="sites")
@@ -230,7 +249,7 @@ plot(ordMRCagg);points(ordMRCagg, display="sites")
 mdsplot_agg = data.frame(x1 = ordMRCagg$points[,1], x2=ordMRCagg$points[,2], Species = motu_agg$Species)
 mdsplot_agg = mdsplot_agg %>% left_join(data_table_aggregated)
 
-MRCord = ggplot(mdsplot_agg, aes(x=x1, y=x2))+
+MRCord_agg_motu = ggplot(mdsplot_agg, aes(x=x1, y=x2))+
   geom_point(aes(col=MSW93_Order, shape=MSW93_Family), size=3, stroke=2)+
   geom_convexhull(aes(fill=GUT),color="gray",alpha=0.3)+
   guides(linetype="none")+
@@ -240,11 +259,11 @@ MRCord = ggplot(mdsplot_agg, aes(x=x1, y=x2))+
   ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0, max.overlaps = 15)+
   theme_bw()+
   theme(aspect.ratio = 1)+
-  guides(fill="none", col="none")+
+  guides(fill="none", col="none", shape="none")+
   labs(x="NMDS 1", y="NMDS 2")+
-  annotate(geom="text", x=min(mdsplot_agg$x1)+abs(0.15*min(mdsplot_agg$x1)), y=min(mdsplot_agg$x2), label=paste("Stress = ",round(ordMRCagg$stress,2)))
+  annotate(geom="text", x=min(mdsplot_agg$x1)+abs(0.25*min(mdsplot_agg$x1)), y=min(mdsplot_agg$x2), label=paste("Stress = ",round(ordMRCagg$stress,2)))
 
-MRCord
+MRCord_agg_motu
 
 
 ### Unifrac ###
@@ -262,7 +281,7 @@ MRCord_agg_unif = ggplot(mdsplot_agg_unif, aes(x=x1, y=x2))+
   scale_shape_manual(name="Family",values=c(1,3,5,7,12, 15, 16))+
   scale_fill_manual(name="Fermentation",values=c("aquamarine4", "deepskyblue4","gray"), labels=c("Foregut Fermenter","Hindgut Fermenter"))+
   scale_color_manual(name="Order",values=c("black","gray70","gray90"))+
-  annotate(geom="text", x=min(mdsplot_agg_unif$x1)+abs(0.15*min(mdsplot_agg_unif$x1)), y=min(mdsplot_agg_unif$x2), label=paste("Stress = ",round(unif_ordMRCagg$stress,2)))+
+  annotate(geom="text", x=min(mdsplot_agg_unif$x1)+abs(0.25*min(mdsplot_agg_unif$x1)), y=min(mdsplot_agg_unif$x2), label=paste("Stress = ",round(unif_ordMRCagg$stress,2)))+
   ggrepel::geom_text_repel(aes(label=str_sub(Species,1)), nudge_y=0, max.overlaps = 15)+
   theme_bw()+
   theme(aspect.ratio = 1)+
@@ -270,6 +289,10 @@ MRCord_agg_unif = ggplot(mdsplot_agg_unif, aes(x=x1, y=x2))+
   labs(x="NMDS 1", y="NMDS 2")
 
 MRCord_agg_unif
+
+sp_ords = gridExtra::grid.arrange(MRCord_agg_motu, MRCord_agg_unif, widths=c(1.75,3), ncol=2)
+
+ggsave(here(paste("plots/sp_ords",threshold_used,".png")), sp_ords, width=15, height=5, dpi=300, device="png")
 
 
 #### Test Variation Explained by Species Traits ####
@@ -283,7 +306,6 @@ envMRC = data_table_aggregated %>% filter(Species != "Cattle")
 motu_agg2 = motu_agg %>% filter(Species != "Cattle")
 # reordinate
 ordMRCagg = metaMDS(dplyr::select(motu_agg2, mOTU_1:endmotu), k=2, distance="bray", binary=F, autotransform = F)
-
 
 # create distance matrix
 MRCdist = vegdist(dplyr::select(motu_agg2, mOTU_1:endmotu), distance="bray")
@@ -300,8 +322,12 @@ par(mfrow=c(1,1))
 #
 
 # implement test
-MRCdiv = adonis2(MRCdist ~ BM_KG + RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
-MRCdiv
+MRCdiv = adonis2(MRCdist ~ BM_KG + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+# check range size
+MRCdivb = adonis2(MRCdist ~ RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+
+# save results
+result_3 = as.data.frame(MRCdiv)
 
 
 # UniFrac
@@ -313,25 +339,32 @@ exclude = which(row.names(ufcmat_agg)=="Cattle")
 ufcmat_agg2 = ufcmat_agg[-exclude,-exclude]
 envMRC$Species == row.names(ufcmat_agg2)
 
-unif_ordMRCagg2 = metaMDS(ufcmat_agg2, k=2)
+unif_ordMRCagg2 = metaMDS(ufcmat_agg2, k=2, dist="bray", binary=F, autotransform = F)
 plot(unif_ordMRCagg)
-
-otu_table(comboseq_agg) = otu_table(comboseq_agg)[-exclude,]
-uniford = ordinate(comboseq_agg, method="NMDS", distance="unifrac", weighted=T)
-plot(uniford)
 
 # run together
 par(mfrow=c(2,2))
-ordisurf(uniford~ BM_KG, envMRC);
-ordisurf(uniford~ RS_KM2, envMRC);
-ordisurf(uniford ~ GS, envMRC);
-ordisurf(uniford ~ UNDERSTORY_SP_MEAN, envMRC)
+ordisurf(unif_ordMRCagg2~ BM_KG, envMRC);
+ordisurf(unif_ordMRCagg2~ RS_KM2, envMRC);
+ordisurf(unif_ordMRCagg2 ~ GS, envMRC);
+ordisurf(unif_ordMRCagg2~ UNDERSTORY_SP_MEAN, envMRC)
 par(mfrow=c(1,1))
 #
 
 # implement permanova
-MRCdiv_unif = adonis2(ufcmat_agg2 ~ BM_KG + RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdiv_unif = adonis2(ufcmat_agg2 ~ BM_KG + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdiv_unifb = adonis2(ufcmat_agg2 ~ RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+
 MRCdiv_unif
+MRCdiv_unifb # minimal difference
+
+result_4 = as.data.frame(MRCdiv_unif)
 
 
+## Export the results
 
+species_anova = rbind(result_1,result_2)
+write_delim(species_anova, here(paste("docs/species_anova_ord",threshold_used,".txt",sep="")))
+
+trait_permanova = round(rbind(result_3,result_4),3)
+write_delim(trait_permanova, here(paste("docs/trait_permanova_ord",threshold_used,".txt",sep="")))

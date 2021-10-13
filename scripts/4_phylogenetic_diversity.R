@@ -5,15 +5,20 @@
 # Use CTRL+SHIFT+F10 to clear
 
 ########
+
 library(picante)
 library(car)
 library(DHARMa)
 library(MCMCglmm)
 library(glmmTMB)
 library(tidyverse)
-library(here)
 library(adegenet)
 library(emmeans)
+
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+setwd("../")
+library(here)
+
 ########
 
 # Import files
@@ -35,7 +40,7 @@ tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 treeNJ = treeNJ1
 data_table = table_1
 tipdata = tipdata1
-threshold_used = "0.001"
+threshold_used = "0.002"
 
 # order the tipdata correctly
 tipdata = tipdata[match(treeNJ$tip.label, tipdata$seq_id),]
@@ -45,6 +50,7 @@ myPal = colorRampPalette(c("red","yellow","green","blue"))
 png(here(paste("plots_temp/tree",threshold_used,".png",sep="")), res=300, width=8, height=8, units="in")
 par(mfrow=c(1,1))
 plot(treeNJ, show.tip=F, x.lim = 0.85)
+plot(treeNJ, show.tip=F)
 tiplabels(tipdata$Taxa, cex=0.5, col=transp(num2col(tipdata$Boot, col.pal=myPal), 0.7), frame="n", offset=0, adj=0)
 temp = pretty(min(tipdata$Boot):max(tipdata$Boot),5)
 legend("topright",fill=transp(num2col(temp, col.pal=myPal),.7), leg=temp, ncol=1, cex=0.7, title="Boot")
@@ -110,12 +116,14 @@ pd
 
 pdplot = gridExtra::grid.arrange(pd, pdz, ncol=2)
 
-ggsave(here(paste("plots_temp/pd_plots_sp",threshold_used,".png", sep="")), pdplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/pd_plots_sp",threshold_used,".png", sep="")), pdplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 # species, ungrouped
 
-pdplot_sp = ggplot(PDData_sum, aes(x=reorder(Species,-pd.obs,na.rm=T), y=pd.obs))+
+pdplot_sp = PDData_sum %>% 
+  mutate(Species = recode(Species, `Grevys zebra` = "Grevy's zebra", `Grants gazelle`="Grant's gazelle", `DikDik`="Dik-dik")) %>% 
+  ggplot(aes(x=reorder(Species,-pd.obs,na.rm=T), y=pd.obs))+
   geom_jitter(width=0.01,height=0.01, alpha=0.5, aes(color=Species))+
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill="none",col="none")+
@@ -146,7 +154,9 @@ result_2 = data.frame(car::Anova(PD_spmodz), R2 = performance::r2(PD_spmodz)[2])
 
 empdz= emmeans(PD_spmodz, ~Species)
 
-pdzplot_sp = ggplot(PDData_sum, aes(x=reorder(Species,-pd.obs.z,na.rm=T), y=pd.obs.z))+
+pdzplot_sp = PDData_sum %>% 
+  mutate(Species = recode(Species, `Grevys zebra` = "Grevy's zebra", `Grants gazelle`="Grant's gazelle", `DikDik`="Dik-dik")) %>% 
+  ggplot(aes(x=reorder(Species,-pd.obs.z,na.rm=T), y=pd.obs.z))+
   geom_hline(yintercept = -2, linetype="dotted")+
   geom_jitter(width=0.01,height=0.01, alpha=0.5, aes(color=Species))+
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
@@ -161,7 +171,7 @@ pdzplot_sp = ggplot(PDData_sum, aes(x=reorder(Species,-pd.obs.z,na.rm=T), y=pd.o
 
 pdspplot = gridExtra::grid.arrange(pdplot_sp,pdzplot_sp,ncol=2)
 
-ggsave(here(paste("plots_temp/pdsplots",threshold_used,".png")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/pdsplots",threshold_used,".png")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 # Models at the species-level
@@ -253,8 +263,6 @@ model_simple2pd.obs = MCMCglmm(pd.obs ~GUT+UNDERSTORY_PROP+ GS+log(BM_KG),
                                nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
 summary(model_simple2pd.obs)
 
-plot(model_simple2pd.obs)
-
 # Calculate lambda
 lambda_pdobs = model_simple2pd.obs$VCV[,'phylo']/
   (model_simple2pd.obs$VCV[,'phylo']+model_simple2pd.obs$VCV[,'units']+model_simple2pd.obs$VCV[,'MSW93_Binomial']+model_simple2pd.obs$VCV[,'Period'])
@@ -290,7 +298,7 @@ pd_sp
 
 pdspplot = gridExtra::grid.arrange(pd_sp,pdz_sp,ncol=2)
 
-ggsave(here(paste("plots_temp/pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 
@@ -316,7 +324,7 @@ names(TMBvars) = c("PD","sesPD")
 
 ## Models MCMC
 MCMCmods2 = MCMCmods %>% 
-  mutate_at(vars(post.mean:pMCMC), funs(round(.,2))) %>% 
+  mutate_at(vars(post.mean:pMCMC), funs(round(.,3))) %>% 
   mutate(CI = paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
   mutate(M = paste(post.mean, " (",pMCMC, ")", sep="")) %>% 
   pivot_longer(cols=c(M,CI), names_to="Measure", values_to="Value") %>% 
@@ -324,7 +332,7 @@ MCMCmods2 = MCMCmods %>%
 
 ## Variance
 MCMCvars2 = MCMCvars %>% 
-  mutate_at(vars(post.mean:eff.samp), funs(round(.,2))) %>% 
+  mutate_at(vars(post.mean:eff.samp), funs(round(.,3))) %>% 
   mutate(CI=paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
   mutate_at(vars(post.mean), funs(as.character(.))) %>% 
   pivot_longer(cols=c(post.mean, CI), names_to="Measure", values_to="Value") %>% 
@@ -333,7 +341,7 @@ MCMCvars2
 
 ## TMB
 TMBmods2 = TMBmods %>% 
-  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,2))) %>% 
+  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,3))) %>% 
   mutate(M_SE=paste(Estimate, `Std. Error`, sep=", ")) %>% 
   mutate(Z_p = paste(`z value`," (",`Pr(>|z|)`,")",sep="")) %>% 
   pivot_longer(cols=c(M_SE,Z_p), names_to="Measure", values_to="Value") %>% 
@@ -354,7 +362,7 @@ TMBvars
 MCMCvars2 = data.frame(MCMCvars2[1:6,c(1:3)], TMB_Prev = c("","","",TMBvars[1,1],"",TMBvars[2,1]),
                        MCMCvars2[7:12,2:3], TMB_Rich =  c("","","",TMBvars[1,1],"",TMBvars[2,1]))
 MCMCvars2 = MCMCvars2 %>% 
-  mutate_at(vars(TMB_Prev, TMB_Rich), funs(round(as.numeric(.),2))) %>% 
+  mutate_at(vars(TMB_Prev, TMB_Rich), funs(round(as.numeric(.),3))) %>% 
   mutate_at(vars(TMB_Prev, TMB_Rich), funs(ifelse(is.na(.), "",.)))
 names(MCMCvars2) = c("Predictor", "MCMC PD", "eff.samp.prev", "TMB PD", "MCMC sesPD", "eff.samp.rich",
                      "TMB sesPD")            
