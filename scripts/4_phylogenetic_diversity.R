@@ -2,7 +2,7 @@
 # Phylogenetic Diversity
 
 # this script depends on scripts 1 and 3
-# Use CTRL+SHIFT+F10 to clear
+# Use CTRL+SHIFT+F10 to clear and clear workspace objects
 
 ########
 
@@ -37,17 +37,17 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ1
-data_table = table_1
-tipdata = tipdata1
-threshold_used = "0.002"
+treeNJ = treeNJ2
+data_table = table_2
+tipdata = tipdata2
+threshold_used = "0.02"
 
 # order the tipdata correctly
 tipdata = tipdata[match(treeNJ$tip.label, tipdata$seq_id),]
 
 myPal = colorRampPalette(c("red","yellow","green","blue"))
 
-png(here(paste("plots_temp/tree",threshold_used,".png",sep="")), res=300, width=8, height=8, units="in")
+png(here(paste("plots/4_tree",threshold_used,".png",sep="")), res=300, width=8, height=8, units="in")
 par(mfrow=c(1,1))
 plot(treeNJ, show.tip=F, x.lim = 0.85)
 plot(treeNJ, show.tip=F)
@@ -116,7 +116,7 @@ pd
 
 pdplot = gridExtra::grid.arrange(pd, pdz, ncol=2)
 
-ggsave(here(paste("plots/pd_plots_sp",threshold_used,".png", sep="")), pdplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/4_pd_plots_sp",threshold_used,".png", sep="")), pdplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 # species, ungrouped
@@ -171,7 +171,7 @@ pdzplot_sp = PDData_sum %>%
 
 pdspplot = gridExtra::grid.arrange(pdplot_sp,pdzplot_sp,ncol=2)
 
-ggsave(here(paste("plots/pdsplots",threshold_used,".png")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/4_pdsplots",threshold_used,".png")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 # Models at the species-level
@@ -298,13 +298,13 @@ pd_sp
 
 pdspplot = gridExtra::grid.arrange(pd_sp,pdz_sp,ncol=2)
 
-ggsave(here(paste("plots/pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
+ggsave(here(paste("plots/4_pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspplot, device="png", dpi=300, width=10, height=5, units="in")
 
 
 
 # write out information
 result_2_3 = rbind(result_1, result_2)
-write_delim(result_2_3, here(paste("docs/anova_tests_pd",threshold_used,".txt", sep="")))
+write_delim(result_2_3, here(paste("docs/4_anova_tests_pd",threshold_used,".txt", sep="")))
 
 MCMCpd$predictor = row.names(MCMCpd)
 MCMCpdz$predictor = row.names(MCMCpdz)
@@ -369,7 +369,7 @@ names(MCMCvars2) = c("Predictor", "MCMC PD", "eff.samp.prev", "TMB PD", "MCMC se
 
 full_results_table = rbind(allMods, MCMCvars2)
 
-write.csv(full_results_table, here(paste("docs/pd_sesPD_model_results",threshold_used,".csv", sep="")), row.names = F)
+write.csv(full_results_table, here(paste("docs/4_pd_sesPD_model_results",threshold_used,".csv", sep="")), row.names = F)
 
 lambdas = as.data.frame(rbind(lambda_pd, lambda_pd_z))
-write_delim(lambdas, here(paste("docs/lambda_pds",threshold_used,".txt",sep="")))
+write_delim(lambdas, here(paste("docs/4_lambda_pds",threshold_used,".txt",sep="")))

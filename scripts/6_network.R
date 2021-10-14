@@ -143,6 +143,7 @@ psite_distribution = ggplot(bin_avgRRA, aes(x=N_Hosts, y=mOTU))+
   labs(x="Number of Host Species", y="mOTU ID")
 psite_distribution
 
+ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")), width=5, height=15, dpi=300, device="png")
 
 ### Test aggregation ###
 
@@ -169,7 +170,7 @@ distribution_table = data.frame(Distribution = c("Log-Normal", "Exponential", "N
 plot(fit.lnorm); plot(fit.exp); plot(fit.nb); plot(fit.pois)
 result_2 = distribution_table
 
-write_delim(result_2, here(paste("docs/distribution_fit",threshold_used,".txt",sep="")))
+write_delim(result_2, here(paste("docs/6_distribution_fit",threshold_used,".txt",sep="")))
 
 ### Create Network ###
 
@@ -245,7 +246,7 @@ plot_names = V(g)$name %in% c(levels(mat_2_long$Species), mat_2_long$Taxa2[which
 
 # Save Network Image
 
-pdf(here(paste("plots/bipartite_network",threshold_used,".pdf",sep="")))
+pdf(here(paste("plots/6_bipartite_network",threshold_used,".pdf",sep="")))
 set.seed(123); plot(g,
      vertex.label = ifelse(plot_names, V(g)$name, ""),
      vertex.label.cex = 0.8,
@@ -421,7 +422,7 @@ V(hostgraph)$frame.color =  "white"
 V(hostgraph)$label.dist = 0
 
 
-pdf(here(paste("plots/hostgraph",threshold_used,".pdf",sep="")), width=8, height=8)
+pdf(here(paste("plots/6_hostgraph",threshold_used,".pdf",sep="")), width=8, height=8)
 set.seed(123); plot(hostgraph,
      vertex.label.cex = 1.5,
      vertex.size=10,
@@ -454,7 +455,7 @@ result_1 = correlations %>%
   pivot_longer(S:P, names_to="Correlation Details", values_to="value") %>% 
   pivot_wider(names_from=test, values_from=value)
 
-write_delim(result_1, here(paste("docs/centrality_cors",threshold_used, ".txt", sep="")))
+write_delim(result_1, here(paste("docs/6_centrality_cors",threshold_used, ".txt", sep="")))
 
 ### Models ###
 
@@ -513,7 +514,7 @@ network_table_vals
 
 
 # export table
-write.csv(network_table_vals, here(paste("docs/network_table_vals",threshold_used,".csv",sep="")), row.names = F)
+write.csv(network_table_vals, here(paste("docs/6_network_table_vals",threshold_used,".csv",sep="")), row.names = F)
 
 ### Cor between log(BM) and log(RS)
 m1 = lm(c ~ GS+GUT+log(BM_KG)+log(RS_KM2), data=comp.data$data)
@@ -598,5 +599,5 @@ share_matrix = ggplot(proj_host_data3, aes(x=Species1, y=Species2))+
 
 share_matrix
 
-ggsave(here(paste("plots/share_matrix",threshold_used,".png", sep="")),
+ggsave(here(paste("plots/6_share_matrix",threshold_used,".png", sep="")),
        share_matrix, dpi=300, device="png")

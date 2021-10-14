@@ -1,0 +1,5 @@
+Distribution AIC
+Log-Normal 165.8689557396074
+Exponential 180.27463277105537
+"Negative Binomial" 186.1271705090815
+Poisson 195.31061882949066

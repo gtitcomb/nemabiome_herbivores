@@ -112,10 +112,12 @@ ggplot(read_dist, aes(x=Sample_type, y=Reads))+
 
 # there is one blank in plate one that has caused problems
 # exclude that here
-read_dist %>% 
+read_info  = read_dist %>% 
   filter(Sample!="Blank02") %>% 
   group_by(Sample_type) %>% 
   summarize_at(vars(Reads), funs(mean, median, min, max, n()))
+
+write_delim(read_info, here("docs/1_read_info.txt"))
 
 #reads = reads[,-(which(names(reads)=="Blank02"))]
 
@@ -191,15 +193,6 @@ clust_reads3 = clust_reads2 %>%
   filter(reads>=1000)
 dim(clust_reads2)[1]-dim(clust_reads3)[1] # 50 dropped out after contaminant filtering
 
-# rarefy to 1000 reads
-# Used repeated rarefaction:
-set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads3[,2:(dim(clust_reads3)[2]-1)], 1000))
-# average through stack
-mean_rare = as.data.frame(apply(rare_stack, 1:2, mean))
-
-# calculate RRA by dividing by 1000
-clust_reads_n = mean_rare %>% 
-  mutate_at(vars(mOTU_1:mOTU_568), funs(./1000))
 
 
 ###### Calculate mOTU loss as a function of RRA threshold ######
@@ -212,14 +205,21 @@ rra_sensitivity = function(data, startcol, endcol, thresholds){
   
   store = data.frame(thresh = rep(0,length(thresholds)), n_mOTUs = rep(0, length(thresholds)))
   for(i in 1:length(thresholds)){
-    mutated = clust_reads_n %>% mutate_at(vars(startcol:endcol), funs(ifelse(.< thresholds[i], 0, .)))
-    store$n_mOTUs[i] = dim(mutated)[2] - length(which(colSums(mutated)==0))
+    mutated = data %>% 
+      mutate_at(vars(startcol:endcol), funs(./reads)) %>% 
+      mutate_at(vars(startcol:endcol), funs(ifelse(. < thresholds[i], 0,.))) %>% 
+      mutate_at(vars(startcol:endcol), funs(ifelse(.>0,1,0)))
+    new_data = dplyr::select(mutated, startcol:endcol) * dplyr::select(data, startcol:endcol)
+    
+    
+    store$n_mOTUs[i] = (dim(mutated)[2]-2) - length(which(colSums(new_data)==0))
     store$thresh[i] = thresholds[i]
   }
   return(store)
 }
 
-sens = rra_sensitivity(clust_reads_n, "mOTU_1", "mOTU_568", thresholds = seq(from = 0, to=0.03, by=0.001))
+sens = rra_sensitivity(clust_reads3, "mOTU_1", "mOTU_568", thresholds = seq(from = 0, to=0.03, by=0.001))
+
 rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
   geom_point()+
   geom_path()+
@@ -227,29 +227,63 @@ rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
   labs(x="RRA Threshold", y="Number of mOTUs in dataset")+
   geom_vline(xintercept = c(0.002, 0.02), linetype="dotted", col="red", size=1)
 rra_elbow
-#ggsave(here("plots/rra_elbow.png"), dpi=300, height=5, width=5, device="png")
+ggsave(here("plots/1_rra_elbow.png"), dpi=300, height=5, width=5, device="png")
 
 
 #######
-
 # remove RRA lower threshold
-clust_reads_n1 = clust_reads_n %>% 
-  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. <0.002, 0, .)))
 
-# remove RRA upper threshold
-clust_reads_n2 = clust_reads_n %>% 
-  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. <0.02, 0, .)))
+# drop mOTUs representing less than .2% of reads in each sample
+decision_include = clust_reads3 %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(./reads)) %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. < 0.002, 0,.))) %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(.>0,1,0)))
 
+clust_reads_n1 = dplyr::select(decision_include, mOTU_1:mOTU_568) * dplyr::select(clust_reads3, mOTU_1:mOTU_568)
+
+# calculate n mOTUs excluded
+length(which(colSums(clust_reads_n1)==0))
+
+clust_reads_n1 = clust_reads_n1[,-(which(colSums(clust_reads_n1)==0))]
+dim(clust_reads_n1)
+
+# add sample back and calculate new reads
+clust_reads_n1$reads = rowSums(clust_reads_n1)
+clust_reads_n1$Sample = clust_reads3$Sample
+
+
+# drop mOTUs representing less than 2% of reads in each sample
+decision_include = clust_reads3 %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(./reads)) %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. < 0.02, 0,.))) %>% 
+  mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(.>0,1,0)))
+
+clust_reads_n2 = dplyr::select(decision_include, mOTU_1:mOTU_568) * dplyr::select(clust_reads3, mOTU_1:mOTU_568)
+
+# calculate n mOTUs excluded
+length(which(colSums(clust_reads_n2)==0))
 
 # remove empty columns
 clust_reads_n2 = clust_reads_n2[,-(which(colSums(clust_reads_n2)==0))]
 dim(clust_reads_n2)
 
-# add metadata
-clust_reads_n1$Sample = clust_reads3$Sample
+# add sample back and calculate new reads
+clust_reads_n2$reads = rowSums(clust_reads_n2)
 clust_reads_n2$Sample = clust_reads3$Sample
-clust_reads_n1$Reads = clust_reads3$reads
-clust_reads_n2$Reads = clust_reads3$reads
+
+
+# rarefy to 1000 reads
+# Used repeated rarefaction:
+# clust_n1
+min(clust_reads_n1$reads)
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n1[,1:(dim(clust_reads_n1)[2]-2)], 991))
+# average through stack
+mean_rare1 = as.data.frame(apply(rare_stack, 1:2, mean))
+
+# calculate RRA by dividing by minimum
+clust_reads_n1 = mean_rare1 %>% 
+  mutate_at(vars(mOTU_1:mOTU_488), funs(./991))
+clust_reads_n1$Sample = clust_reads3$Sample
 
 # table 1 is our lower bound
 table_1 = left_join(clust_reads_n1, read_dist, by="Sample")
@@ -257,7 +291,19 @@ head(table_1)
 dim(table_1)
 end1 = dim(table_1)[2]-15
 
-# table 2 is an upper bound
+
+# clust_n2
+min(clust_reads_n2$reads)
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n2[,1:(dim(clust_reads_n2)[2]-2)], 748))
+# average through stack
+mean_rare2 = as.data.frame(apply(rare_stack, 1:2, mean))
+
+# calculate RRA by dividing by minimum
+clust_reads_n2 = mean_rare2 %>% 
+  mutate_at(vars(mOTU_1:mOTU_94), funs(./748))
+clust_reads_n2$Sample = clust_reads3$Sample
+
+# table 1 is our lower bound
 table_2 = left_join(clust_reads_n2, read_dist, by="Sample")
 head(table_2)
 dim(table_2)
@@ -268,7 +314,7 @@ end2 = dim(table_2)[2]-15
 nmds1 = metaMDS(table_1[,2:end1])
 plot(nmds1)
 levels(as.factor(table_1$Species))
-mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads.x)
+mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads)
 colors = c( "violet", "orange", "violet","blue","magenta", "blue2", "green", "orange", "blue", "magenta",
            "blue", "green", "magenta", "blue", "blue", "blue", "magenta", "red", "green", "magenta")
 ggplot(mds_data1, aes(x=x1, y=x2))+
@@ -281,7 +327,7 @@ ggplot(mds_data1, aes(x=x1, y=x2))+
 # 
 nmds2 = metaMDS(table_2[,2:end2])
 plot(nmds2)
-mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type, species=table_2$Species, sample=table_2$Sample, reads=table_2$Reads.x)
+mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type, species=table_2$Species, sample=table_2$Sample, reads=table_2$Reads)
 ggplot(mds_data2, aes(x=x1, y=x2))+
   geom_point(aes(col=species), alpha=0.2)+
   ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
@@ -312,18 +358,18 @@ table_2 = table_2 %>%
 
 # remove empty columns
 (which(colSums(table_1[,1:end1])==0))
-table_1 = table_1[,-(which(colSums(table_1[,1:end1])==0))]
+#table_1 = table_1[,-(which(colSums(table_1[,1:end1])==0))]
 dim(table_1)
 table_1 = table_1 %>% 
-  rename(Filtered_Reads = Reads.x)
+  rename(Filtered_Reads = Reads)
 
 (which(colSums(table_2[,1:end2])==0)) # this should be none
 #table_2 = table_2[,-(which(colSums(table_2[,1:end2])==0))]
 dim(table_2)
 table_2 = table_2 %>% 
-  rename(Filtered_Reads = Reads.x)
+  rename(Filtered_Reads = Reads)
 
-# there are 15 metadata columns, so this should be 103 and 80 mOTUs respectively
+# there are 15 metadata columns, so this should be 110 and 94 mOTUs respectively
 
 ##############################
 # save the cleaned data tables

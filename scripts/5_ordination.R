@@ -153,7 +153,7 @@ MRCord2 = ggplot(mdsplot, aes(x=x2, y=x3))+
   geom_point(aes(col=species), size=2)+
   geom_convexhull(aes(fill=species), alpha=0.2)+
   geom_point(data=spmds, aes(x=NMDS1, y=NMDS3), col="gray", alpha=0.8)+
-  annotate(geom="text", x=min(mdsplot$x2)-abs(0.5*min(mdsplot$x2)), y=min(mdsplot$x3), label=paste("Stress = ",round(ordMRC$stress,2)))+
+  annotate(geom="text", x=min(mdsplot$x2)-abs(0.25*min(mdsplot$x2)), y=min(mdsplot$x3), label=paste("Stress = ",round(ordMRC$stress,2)))+
   ggrepel::geom_text_repel(data=spmds, aes(x=NMDS2, y=NMDS3, label=Taxa2), size=2.5, fontface="italic")+
   scale_fill_manual(values=animal_colors)+
   scale_color_manual(values=animal_colors)+
@@ -162,9 +162,9 @@ MRCord2 = ggplot(mdsplot, aes(x=x2, y=x3))+
   guides(fill="none", col="none")+
   labs(x="NMDS 2", y="NMDS 3")
 
-mOTU_NMDS = gridExtra::grid.arrange(MRCord1,MRCord2,ncol=2, widths=c(1.1,1))
+mOTU_NMDS = gridExtra::grid.arrange(MRCord1,MRCord2,ncol=2, widths=c(1,1.45))
 
-ggsave(here(paste("plots/mOTU_NMDS",threshold_used,".png")), mOTU_NMDS, width=12, height=5, dpi=300, device="png")
+ggsave(here(paste("plots/5_mOTU_NMDS",threshold_used,".png", sep="")), mOTU_NMDS, width=12, height=5, dpi=300, device="png")
 
 
 
@@ -292,7 +292,7 @@ MRCord_agg_unif
 
 sp_ords = gridExtra::grid.arrange(MRCord_agg_motu, MRCord_agg_unif, widths=c(1.75,3), ncol=2)
 
-ggsave(here(paste("plots/sp_ords",threshold_used,".png")), sp_ords, width=15, height=5, dpi=300, device="png")
+ggsave(here(paste("plots/5_sp_ords",threshold_used,".png",sep="")), sp_ords, width=15, height=5, dpi=300, device="png")
 
 
 #### Test Variation Explained by Species Traits ####
@@ -364,7 +364,7 @@ result_4 = as.data.frame(MRCdiv_unif)
 ## Export the results
 
 species_anova = rbind(result_1,result_2)
-write_delim(species_anova, here(paste("docs/species_anova_ord",threshold_used,".txt",sep="")))
+write_delim(species_anova, here(paste("docs/5_species_anova_ord",threshold_used,".txt",sep="")))
 
 trait_permanova = round(rbind(result_3,result_4),3)
-write_delim(trait_permanova, here(paste("docs/trait_permanova_ord",threshold_used,".txt",sep="")))
+write_delim(trait_permanova, here(paste("docs/5_trait_permanova_ord",threshold_used,".txt",sep="")))

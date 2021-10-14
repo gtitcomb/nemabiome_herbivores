@@ -3,7 +3,7 @@
 # 6 October 2021
 # Georgia Titcomb
 
-# Use Ctrl+Shift+F10 to restart R
+# Use Ctrl+Shift+F10 to restart R, clear objects from workspace
 
 # this script depends on script 1
 #####################
@@ -69,7 +69,7 @@ cor.test(tab1$richness, tab2$richness)
 # decide which data frame
 tab = tab2
 # type in the threshold as a character to use for saving plots correctly
-threshold_used = "0.02" 
+threshold_used = "0.002" 
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 
@@ -118,7 +118,7 @@ fact_7 = tab %>%
 # fact summary:
 fact_summary = data.frame(Fact = c("qPCR N", "Ct <35 N", "N selected from qPCR", "N metabarcoded", "Depth", "N Dropped", "N pos","N mOTU"),
            Stat = round(c(fact_1, fact_2, fact_3, fact_4, fact_5, fact_6, fact_7),0))
-write_delim(fact_summary,here(paste("docs/sample_facts_", threshold_used,".txt", sep="")))
+write_delim(fact_summary,here(paste("docs/2_sample_facts_", threshold_used,".txt", sep="")))
 
 
 
@@ -187,7 +187,7 @@ temp = cor.test(compare$mean, compare$richness, method = "spearman")
 result_1 = unlist(temp) %>% as.data.frame()
 
 prev_rich_graph = gridExtra::grid.arrange(prevgraph, richgraph, ncol=2)
-ggsave(here(paste("plots/prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
+ggsave(here(paste("plots/2_prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
 
 
 
@@ -459,15 +459,15 @@ ggplot(MPprevinfoMCMC, aes(x=GS, y=pred))+
 
 gpplots = gridExtra::grid.arrange(prevplotgp, rich_sp_plot, ncol=2)
 
-ggsave(here(paste("plots/sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=7, units="in")
+ggsave(here(paste("plots/2_sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=7, units="in")
 
 
 
 # write out information
 result_2_3 = rbind(result_2, result_3)
 
-write_delim(result_1, here(paste("docs/rich_prev_correlation",threshold_used,".txt", sep="")))
-write_delim(result_2_3, here(paste("docs/anova_tests",threshold_used,".txt", sep="")))
+write_delim(result_1, here(paste("docs/2_rich_prev_correlation",threshold_used,".txt", sep="")))
+write_delim(result_2_3, here(paste("docs/2_anova_tests",threshold_used,".txt", sep="")))
 
 
 MCMCprevalence$predictor = row.names(MCMCprevalence)
@@ -534,6 +534,6 @@ names(MCMCvars2) = c("Predictor", "MCMC Prevalence", "eff.samp.prev", "TMB Preva
 full_results_table = rbind(allMods, MCMCvars2)
 
 # cleaned results table
-write.csv(full_results_table, here(paste("docs/prev_rich_model_results",threshold_used,".csv", sep="")), row.names = F)
+write.csv(full_results_table, here(paste("docs/2_prev_rich_model_results",threshold_used,".csv", sep="")), row.names = F)
 # lambda
-write_delim(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/prev_rich_lambda",threshold_used,".txt")))
+write_delim(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/2_prev_rich_lambda",threshold_used,".txt")))
