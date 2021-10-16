@@ -37,10 +37,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
-threshold_used = "0.02"
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 # order the tipdata correctly
 tipdata = tipdata[match(treeNJ$tip.label, tipdata$seq_id),]
@@ -304,7 +304,7 @@ ggsave(here(paste("plots/4_pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspp
 
 # write out information
 result_2_3 = rbind(result_1, result_2)
-write_delim(result_2_3, here(paste("docs/4_anova_tests_pd",threshold_used,".txt", sep="")))
+write.table(result_2_3, here(paste("docs/4_anova_tests_pd",threshold_used,".txt", sep="")),sep="\t")
 
 MCMCpd$predictor = row.names(MCMCpd)
 MCMCpdz$predictor = row.names(MCMCpdz)
@@ -372,4 +372,18 @@ full_results_table = rbind(allMods, MCMCvars2)
 write.csv(full_results_table, here(paste("docs/4_pd_sesPD_model_results",threshold_used,".csv", sep="")), row.names = F)
 
 lambdas = as.data.frame(rbind(lambda_pd, lambda_pd_z))
-write_delim(lambdas, here(paste("docs/4_lambda_pds",threshold_used,".txt",sep="")))
+write.table(lambdas, here(paste("docs/4_lambda_pds",threshold_used,".txt",sep="")),sep="\t")
+
+
+### species summary
+# species summary
+pd_result = PDData_sum %>% 
+  group_by(Species) %>% 
+  summarize_at(vars(pd.obs, pd.obs.z), funs(mean(., na.rm=T)))
+samp_exluded= PDData_sum %>% 
+  filter(is.na(pd.obs)) %>% 
+  group_by(Species) %>% 
+  summarize(n())
+
+write.csv(pd_result, here(paste("docs/4_pd_summary",threshold_used,".csv", sep="")), row.names=F)
+write.table(samp_exluded, here(paste("docs/4_pd_excluded",threshold_used,".txt",sep="")), sep="\t")

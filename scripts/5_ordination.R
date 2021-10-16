@@ -31,10 +31,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ1
-data_table = table_1
+treeNJ = treeNJ2
+data_table = table_2
 tipdata = tipdata1
-threshold_used = "0.002"
+threshold_used = "0.02"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 
@@ -314,17 +314,17 @@ envMRC$Species == motu_agg2$Species
 
 # run together
 par(mfrow=c(2,2))
-ordisurf(ordMRCagg ~ BM_KG, envMRC);
-ordisurf(ordMRCagg ~ RS_KM2, envMRC);
+ordisurf(ordMRCagg ~ log(BM_KG), envMRC);
+ordisurf(ordMRCagg ~ log(RS_KM2), envMRC);
 ordisurf(ordMRCagg ~ GS, envMRC);
 ordisurf(ordMRCagg ~ UNDERSTORY_SP_MEAN, envMRC)
 par(mfrow=c(1,1))
 #
 
 # implement test
-MRCdiv = adonis2(MRCdist ~ BM_KG + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdiv = adonis2(MRCdist ~ log(BM_KG) + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
 # check range size
-MRCdivb = adonis2(MRCdist ~ RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdivb = adonis2(MRCdist ~ log(RS_KM2) + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
 
 # save results
 result_3 = as.data.frame(MRCdiv)
@@ -344,16 +344,16 @@ plot(unif_ordMRCagg)
 
 # run together
 par(mfrow=c(2,2))
-ordisurf(unif_ordMRCagg2~ BM_KG, envMRC);
-ordisurf(unif_ordMRCagg2~ RS_KM2, envMRC);
+ordisurf(unif_ordMRCagg2~ log(BM_KG), envMRC);
+ordisurf(unif_ordMRCagg2~ log(RS_KM2), envMRC);
 ordisurf(unif_ordMRCagg2 ~ GS, envMRC);
 ordisurf(unif_ordMRCagg2~ UNDERSTORY_SP_MEAN, envMRC)
 par(mfrow=c(1,1))
 #
 
 # implement permanova
-MRCdiv_unif = adonis2(ufcmat_agg2 ~ BM_KG + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
-MRCdiv_unifb = adonis2(ufcmat_agg2 ~ RS_KM2 + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdiv_unif = adonis2(ufcmat_agg2 ~ log(BM_KG) + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
+MRCdiv_unifb = adonis2(ufcmat_agg2 ~ log(RS_KM2) + GS + GUT + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")
 
 MRCdiv_unif
 MRCdiv_unifb # minimal difference

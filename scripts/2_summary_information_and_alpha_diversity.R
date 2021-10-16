@@ -67,7 +67,7 @@ cor.test(tab1$richness, tab2$richness)
 ##### Dataset-specific ############# 
 
 # decide which data frame
-tab = tab2
+tab = tab1
 # type in the threshold as a character to use for saving plots correctly
 threshold_used = "0.002" 
 
@@ -115,10 +115,19 @@ fact_7 = tab %>%
   select(mOTU_1:mOTU_94) %>% 
   dim(.)
 
+fact_8 = tab %>% 
+  filter(Species == "Cattle") %>% 
+  nrow()
+
+fact_9 = tab %>% 
+  filter(is.na(mOTU_1)==F) %>% 
+  filter(Species == "Cattle") %>% 
+  nrow()
+
 # fact summary:
-fact_summary = data.frame(Fact = c("qPCR N", "Ct <35 N", "N selected from qPCR", "N metabarcoded", "Depth", "N Dropped", "N pos","N mOTU"),
-           Stat = round(c(fact_1, fact_2, fact_3, fact_4, fact_5, fact_6, fact_7),0))
-write_delim(fact_summary,here(paste("docs/2_sample_facts_", threshold_used,".txt", sep="")))
+fact_summary = data.frame(Fact = c("qPCR N", "Ct <35 N", "N selected from qPCR", "N metabarcoded", "Depth", "N Dropped", "N pos","N mOTU", "N cattle", "N cattle RRA"),
+           Stat = round(c(fact_1, fact_2, fact_3, fact_4, fact_5, fact_6, fact_7, fact_8, fact_9),0))
+write.table(fact_summary,here(paste("docs/2_sample_facts_", threshold_used,".txt", sep="")), sep="\t", row.names=F)
 
 
 
@@ -204,9 +213,10 @@ as.data.frame(performance::r2_tjur(MPprev_mod))
 
 result_2 = cbind(as.data.frame(temp), data.frame(R2 = performance::r2_tjur(MPprev_mod)))
 
-
+dim(MP_prev)
 ## Richness ################
 # fit model
+dim(tab_present)
 MPsp = glmmTMB(richness ~ Species, family="poisson", data=tab_present)
 
 # diagnostics
@@ -262,7 +272,7 @@ MPrichinfoMCMC = MPrichinfoMCMC[-which(MPrichinfoMCMC$Species=="Cattle"),]
 MPrichinfoMCMC[which(is.na(MPrichinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_PROP=MPrichinfoMCMC[which(is.na(MPrichinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_SP_MEAN
 
 dim(MPrichinfoMCMC) 
-# 255 samples
+# 257 samples (281 - 24 cattle)
 
 # double-check variable correlations
 MPrichinfoMCMC %>% 
@@ -273,8 +283,9 @@ MPrichinfoMCMC %>%
   ggplot(aes(x=log(BM_KG), y=GS))+
   geom_point()+
   geom_smooth(method="lm", se=F)
+cor.test(MPrichinfoMCMC$BM_KG, MPrichinfoMCMC$RS_KM2, method="spearman")
 
-# Body mass and range size are closely related; will have to fit separately
+# Body mass and range size are closely related; will want to fit separately
 
 # Fit model
 
@@ -378,6 +389,8 @@ MPprevinfoMCMC=MPprevinfoMCMC[-which(MPprevinfoMCMC$Species=="Cattle"),]
 
 # use group mean
 MPprevinfoMCMC[which(is.na(MPprevinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_PROP=MPprevinfoMCMC[which(is.na(MPprevinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_SP_MEAN
+dim(MPprevinfoMCMC)
+# 520 - 49 cattle
 
 
 a = 1000
@@ -466,8 +479,8 @@ ggsave(here(paste("plots/2_sp_prev_rich",threshold_used,".png", sep="")), gpplot
 # write out information
 result_2_3 = rbind(result_2, result_3)
 
-write_delim(result_1, here(paste("docs/2_rich_prev_correlation",threshold_used,".txt", sep="")))
-write_delim(result_2_3, here(paste("docs/2_anova_tests",threshold_used,".txt", sep="")))
+write.table(result_1, here(paste("docs/2_rich_prev_correlation",threshold_used,".txt", sep="")), sep="\t")
+write.table(result_2_3, here(paste("docs/2_anova_tests",threshold_used,".txt", sep="")), sep="\t")
 
 
 MCMCprevalence$predictor = row.names(MCMCprevalence)
@@ -536,4 +549,19 @@ full_results_table = rbind(allMods, MCMCvars2)
 # cleaned results table
 write.csv(full_results_table, here(paste("docs/2_prev_rich_model_results",threshold_used,".csv", sep="")), row.names = F)
 # lambda
-write_delim(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/2_prev_rich_lambda",threshold_used,".txt")))
+write.table(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/2_prev_rich_lambda",threshold_used,".txt")), sep="\t")
+
+
+# species summary
+prev_result = tab %>% 
+  group_by(Species) %>% 
+  mutate_at(vars(rd_2_qpcr_present), funs(ifelse(.=="Y",1,0))) %>% 
+  summarize_at(vars(rd_2_qpcr_present), funs(mean))
+rich_result = tab %>% 
+  filter(is.na(mOTU_1)==F) %>% 
+  group_by(Species) %>% 
+  summarize_at(vars(richness), funs(mean))
+
+sp_sum = left_join(prev_result, rich_result)
+
+write.csv(sp_sum, here(paste("docs/2_prev_rich_summary",threshold_used,".csv", sep="")), row.names=F)

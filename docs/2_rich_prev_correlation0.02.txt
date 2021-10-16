@@ -1,8 +1,8 @@
-.
-200.622815051938
-0.000470015957874355
-0.754138707044194
-0
-two.sided
-"Spearman's rank correlation rho"
-"compare$mean and compare$richness"
+"."
+"statistic.S"	"200.622815051938"
+"p.value"	"0.000470015957874355"
+"estimate.rho"	"0.754138707044194"
+"null.value.rho"	"0"
+"alternative"	"two.sided"
+"method"	"Spearman's rank correlation rho"
+"data.name"	"compare$mean and compare$richness"

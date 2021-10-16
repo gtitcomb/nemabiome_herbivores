@@ -1,0 +1,6 @@
+"Species"	"n()"
+"1"	"Cattle"	1
+"2"	"DikDik"	3
+"3"	"Donkey"	1
+"4"	"Hippo"	7
+"5"	"Warthog"	1

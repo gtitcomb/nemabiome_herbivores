@@ -20,7 +20,6 @@ library(here)
 # read in data
 reads = read.csv(here("data/raw_motu_table_mpala_nematodes.csv"))
 
-
 # determine clustering level
 length(levels(as.factor(reads$cluster_sumatra98)))
 elbow_data = data.frame(sum90 = length(levels(as.factor(reads$cluster_sumatra90))),
@@ -42,7 +41,7 @@ clust_elbow = elbow_data %>%
   labs(x="Clustering Level", y="Number of mOTUs in dataset")
 clust_elbow
 
-#ggsave(here("plots/clust_elbow.png"), dpi=300, height=5, width=5, device="png")
+ggsave(here("plots/1_clust_elbow.png"), dpi=300, height=5, width=5, device="png")
 
 
 # combine with plate plan data
@@ -117,7 +116,7 @@ read_info  = read_dist %>%
   group_by(Sample_type) %>% 
   summarize_at(vars(Reads), funs(mean, median, min, max, n()))
 
-write_delim(read_info, here("docs/1_read_info.txt"))
+write.table(read_info, here("docs/1_read_info.txt"), sep="\t", row.names=F)
 
 #reads = reads[,-(which(names(reads)=="Blank02"))]
 
@@ -136,6 +135,10 @@ write_delim(read_info, here("docs/1_read_info.txt"))
 clust_reads = reads %>% 
   group_by(cluster_sumatra98) %>% 
   summarize_at(vars(Blank01:MRC_WAT_205), funs(sum))
+
+# step1 read tracking
+a_n_motu = clust_reads %>% group_by(cluster_sumatra98) %>% nrow()
+a_n_samp = length(grep("MRC", names(clust_reads)))
 
 #organizing vector
 col_order = plate_plan %>% 
@@ -164,15 +167,17 @@ sp_counts = plate_plan %>%
   group_by(Species) %>% 
   summarize(n=n())
 
-# total number of samples (includes positives)
+# total number of samples (includes 325 samples and 8 positives)
 sum(sp_counts$n)
 
 # run microDecon
 set.seed(0); decontaminated = decon(data = read_to_decontam, numb.blanks = 51, numb.ind =333, taxa=F, runs=2)
 
-# average read depth for samples, post filtering
+# average read depth for samples, after subtractions
 mean(colSums(decontaminated$decon.table[,-c(1:2)]))
 
+b_n_motu = a_n_motu - dim(decontaminated$OTUs.removed)[1]
+b_n_samp = length(grep("MRC", names(decontaminated$decon.table)))
 
 # transpose
 clust_reads2 = decontaminated$decon.table %>% 
@@ -185,14 +190,24 @@ clust_reads2 = clust_reads2[,-(which(colSums(clust_reads2[,-1])==0)+1)]
 clust_reads2 = clust_reads2[,-(which(names(clust_reads2)=="mOTU_NA"))]
 which(colSums(clust_reads2[,-1])==0) # check
 
+# motus lost from positive sample and NA removed
+c_n_motu = b_n_motu - 2
+c_n_samp = b_n_samp - length(which(rowSums(clust_reads2[,-1])==0))
+
+length(grep("POS",clust_reads2$Sample))
+# 333 - 8
+length(grep("mOTU", names(clust_reads2)))
+
+
 # calculate reads again
 clust_reads2$reads = rowSums(clust_reads2[,-1])
 
 # exclude <1000
 clust_reads3 = clust_reads2 %>% 
   filter(reads>=1000)
-dim(clust_reads2)[1]-dim(clust_reads3)[1] # 50 dropped out after contaminant filtering
 
+d_n_motu = c_n_motu - length(which(colSums(clust_reads3[,-1])==0))
+d_n_samp = length(grep("MRC", clust_reads3$Sample))
 
 
 ###### Calculate mOTU loss as a function of RRA threshold ######
@@ -242,10 +257,10 @@ decision_include = clust_reads3 %>%
 clust_reads_n1 = dplyr::select(decision_include, mOTU_1:mOTU_568) * dplyr::select(clust_reads3, mOTU_1:mOTU_568)
 
 # calculate n mOTUs excluded
-length(which(colSums(clust_reads_n1)==0))
+e_n_motu1 = d_n_motu - length(which(colSums(clust_reads_n1)==0))
+e_n_samp1 = d_n_samp - length(which(rowSums(clust_reads_n1) ==0))
 
 clust_reads_n1 = clust_reads_n1[,-(which(colSums(clust_reads_n1)==0))]
-dim(clust_reads_n1)
 
 # add sample back and calculate new reads
 clust_reads_n1$reads = rowSums(clust_reads_n1)
@@ -261,7 +276,8 @@ decision_include = clust_reads3 %>%
 clust_reads_n2 = dplyr::select(decision_include, mOTU_1:mOTU_568) * dplyr::select(clust_reads3, mOTU_1:mOTU_568)
 
 # calculate n mOTUs excluded
-length(which(colSums(clust_reads_n2)==0))
+e_n_motu2 = d_n_motu - length(which(colSums(clust_reads_n2)==0))
+e_n_samp2 = d_n_samp - length(which(rowSums(clust_reads_n2) ==0))
 
 # remove empty columns
 clust_reads_n2 = clust_reads_n2[,-(which(colSums(clust_reads_n2)==0))]
@@ -289,7 +305,7 @@ clust_reads_n1$Sample = clust_reads3$Sample
 table_1 = left_join(clust_reads_n1, read_dist, by="Sample")
 head(table_1)
 dim(table_1)
-end1 = dim(table_1)[2]-15
+end1 = dim(table_1)[2]-14
 
 
 # clust_n2
@@ -307,11 +323,11 @@ clust_reads_n2$Sample = clust_reads3$Sample
 table_2 = left_join(clust_reads_n2, read_dist, by="Sample")
 head(table_2)
 dim(table_2)
-end2 = dim(table_2)[2]-15
+end2 = dim(table_2)[2]-14
 
 
 #quick mds visual
-nmds1 = metaMDS(table_1[,2:end1])
+nmds1 = metaMDS(table_1[,1:end1])
 plot(nmds1)
 levels(as.factor(table_1$Species))
 mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads)
@@ -325,7 +341,7 @@ ggplot(mds_data1, aes(x=x1, y=x2))+
   theme_bw()
 
 # 
-nmds2 = metaMDS(table_2[,2:end2])
+nmds2 = metaMDS(table_2[,1:end2])
 plot(nmds2)
 mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type, species=table_2$Species, sample=table_2$Sample, reads=table_2$Reads)
 ggplot(mds_data2, aes(x=x1, y=x2))+
@@ -347,25 +363,32 @@ table_2 = table_2 %>%
 table_1 = table_1 %>% 
   filter(Species != "Hybrid Zebra") %>% 
   filter(Species != "Hybrid zebra") %>% 
-  filter(Species != "Waterbuck") %>% 
   filter(Sample != "MRC_17_HIP_93")
 table_2 = table_2 %>%
   filter(Species != "Hybrid Zebra") %>% 
   filter(Species != "Hybrid zebra") %>% 
-  filter(Species != "Waterbuck") %>% 
   filter(Sample != "MRC_17_HIP_93")
 
 
-# remove empty columns
+# double check empty columns
 (which(colSums(table_1[,1:end1])==0))
-#table_1 = table_1[,-(which(colSums(table_1[,1:end1])==0))]
+
 dim(table_1)
+
+f_n_motu1 = dim(table_1[,1:end1])[2]
+f_n_samp1 = dim(table_1[,1:end1])[1]
+
 table_1 = table_1 %>% 
   rename(Filtered_Reads = Reads)
 
+# double check empty columns
 (which(colSums(table_2[,1:end2])==0)) # this should be none
-#table_2 = table_2[,-(which(colSums(table_2[,1:end2])==0))]
+
 dim(table_2)
+
+f_n_motu2 = dim(table_2[,1:end2])[2]
+f_n_samp2 = dim(table_2[,1:end2])[1]
+
 table_2 = table_2 %>% 
   rename(Filtered_Reads = Reads)
 
@@ -376,5 +399,11 @@ table_2 = table_2 %>%
 write.csv(dplyr::select(table_1, mOTU_1:Filtered_Reads), here("data/RRA_table_1.csv"), row.names=F)
 write.csv(dplyr::select(table_2, mOTU_1:Filtered_Reads), here("data/RRA_table_2.csv"), row.names=F)
 
+# sample and otu filtering summary
+filt_summary = data.frame(step = c("initial","decontam","less_1000","POS_NA_mOTU","RRA","extras"),
+           n_motu1 = c(a_n_motu, b_n_motu, c_n_motu, d_n_motu, e_n_motu1, f_n_motu1),
+           n_motu2 = c(a_n_motu, b_n_motu, c_n_motu, d_n_motu, e_n_motu2, f_n_motu2),
+           n_samp1 = c(a_n_samp, b_n_samp, c_n_samp, d_n_samp, e_n_samp1, f_n_samp1),
+           n_samp2 = c(a_n_samp, b_n_samp, c_n_samp, d_n_samp, e_n_samp2, f_n_samp2))
 
-  
+write.table(filt_summary, here("docs/1_filt_summary.txt"), sep="\t", row.names=F)  

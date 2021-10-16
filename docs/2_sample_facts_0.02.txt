@@ -1,9 +1,11 @@
-Fact Stat
-"qPCR N" 547
-"Ct <35 N" 357
-"N selected from qPCR" 309
-"N metabarcoded" 320
-Depth 17902
-"N Dropped" 41
-"N pos" 281
-"N mOTU" 80
+"Fact"	"Stat"
+"qPCR N"	547
+"Ct <35 N"	357
+"N selected from qPCR"	311
+"N metabarcoded"	322
+"Depth"	17902
+"N Dropped"	41
+"N pos"	281
+"N mOTU"	80
+"N cattle"	49
+"N cattle RRA"	24

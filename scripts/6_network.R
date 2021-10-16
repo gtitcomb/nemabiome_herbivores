@@ -31,10 +31,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ1
-data_table = table_1
-tipdata = tipdata1
-threshold_used = "0.002"
+treeNJ = treeNJ2
+data_table = table_2
+tipdata = tipdata2
+threshold_used = "0.02"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 endmotu = names(data_table)[dim(data_table)[2]-27]
