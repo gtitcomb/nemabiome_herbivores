@@ -52,7 +52,7 @@ tab1 %>%
   filter(is.na(Location)==T)
 
 dim(tab1);dim(tab2)
-# add 27 sheep and goats for full sample size (+1 hippo, 2 waterbuck)
+# add 27 sheep and goats for full sample size (1 hippo, 1 hybrid zebra, 2 waterbuck are still included)
 
 # use foregut fermentation for hippos and camels
 tab1 = tab1 %>% 
@@ -67,9 +67,9 @@ cor.test(tab1$richness, tab2$richness)
 ##### Dataset-specific ############# 
 
 # decide which data frame
-tab = tab1
+tab = tab2
 # type in the threshold as a character to use for saving plots correctly
-threshold_used = "0.002" 
+threshold_used = "0.02" 
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 
@@ -149,6 +149,10 @@ richgraph = tab_present %>%
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill="none",col="none")+
   theme_bw(base_size=16)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   scale_fill_manual(values=animal_colors)+
   scale_color_manual(values=animal_colors)+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
@@ -177,6 +181,10 @@ prevgraph = tab_prev %>%
   geom_errorbar(aes(ymin=lower, ymax=upper, color=Species), size=1.2)+
   guides(col="none")+
   theme_bw(base_size = 16)+
+  theme(panel.grid.major.y = element_blank(),
+              panel.grid.minor.y = element_blank(),
+              panel.grid.major.x = element_blank(),
+              panel.grid.minor.x = element_blank())+
   scale_color_manual(values=animal_colors)+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
   scale_y_continuous(limits=c(0,1))+
@@ -196,7 +204,7 @@ temp = cor.test(compare$mean, compare$richness, method = "spearman")
 result_1 = unlist(temp) %>% as.data.frame()
 
 prev_rich_graph = gridExtra::grid.arrange(prevgraph, richgraph, ncol=2)
-ggsave(here(paste("plots/2_prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=7, dpi=300, device="png")
+ggsave(here(paste("plots/2_prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=5, dpi=300, device="png")
 
 
 
@@ -349,6 +357,10 @@ MPrichinfoMCMC %>%
   geom_point(aes(col=Species), size=1.5)+
   geom_errorbar(aes(ymin=mean-se, ymax=mean+se, col=Species),size=1)+
   theme_bw(base_size=14)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   scale_color_manual(values=animal_colors[-3])+
   facet_wrap(~Variable, scales="free_x")+
   labs(y="Parasite mOTU Richness")
@@ -360,6 +372,10 @@ rich_sp_plot = MPrichinfoMCMC %>%
   geom_point(data=GUTests, aes(x=GUT, y=rate), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   labs(x="Gut Type", y="Richness")
 
 rich_sp_plot = rich_sp_plot+guides(col="none")
@@ -452,7 +468,12 @@ prevplotgp = emmeans(model_prevalence, ~GUT, type="response") %>%
   geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL ),size=1)+
   geom_point(size=1.5) +
   scale_color_manual(values=animal_colors)+
-  theme_bw(base_size=14)+guides(col="none")+
+  theme_bw(base_size=14)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
+  guides(col="none")+
   labs(x="Gut Type", y="Prevalence")
 
 
@@ -472,7 +493,7 @@ ggplot(MPprevinfoMCMC, aes(x=GS, y=pred))+
 
 gpplots = gridExtra::grid.arrange(prevplotgp, rich_sp_plot, ncol=2)
 
-ggsave(here(paste("plots/2_sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=7, units="in")
+ggsave(here(paste("plots/2_sp_prev_rich",threshold_used,".png", sep="")), gpplots, device="png", dpi=300, width=10, height=5, units="in")
 
 
 
@@ -556,11 +577,13 @@ write.table(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/2_pr
 prev_result = tab %>% 
   group_by(Species) %>% 
   mutate_at(vars(rd_2_qpcr_present), funs(ifelse(.=="Y",1,0))) %>% 
-  summarize_at(vars(rd_2_qpcr_present), funs(mean))
+  summarize_at(vars(rd_2_qpcr_present), funs(mean,n())) %>% 
+  rename(Prevalence = mean, Prev_N = n)
 rich_result = tab %>% 
   filter(is.na(mOTU_1)==F) %>% 
   group_by(Species) %>% 
-  summarize_at(vars(richness), funs(mean))
+  summarize_at(vars(richness), funs(mean,n())) %>% 
+  rename(Richness = mean, Rich_N = n)
 
 sp_sum = left_join(prev_result, rich_result)
 

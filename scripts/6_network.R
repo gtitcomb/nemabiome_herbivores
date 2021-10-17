@@ -85,11 +85,12 @@ avgRRA2 = avgRRA %>%
   mutate_at(vars(mOTU_1:endmotu), funs(ifelse(.< as.numeric(threshold_used),0,.)))
 
 # calculate prevalence of mOTU instances
-# nRRA = data_table %>%
-#   group_by(Species) %>%
-#   mutate_at(vars(mOTU_1:endmotu), funs(ifelse(. > 0,1,0))) %>% 
-#   summarize_at(vars(mOTU_1:endmotu), funs(sum(.)))%>% 
-#   ungroup()
+nRRA = data_table %>%
+  mutate_at(vars(mOTU_1:endmotu), funs(ifelse(. > 0,1,0))) %>%
+  group_by(Species) %>%
+  summarize_at(vars(mOTU_1:endmotu), funs(sum(.)))%>%
+  mutate_at(vars(mOTU_1:endmotu), funs(ifelse(.>0,1,0))) %>% 
+  ungroup()
 
 # calculate binary version of avgRRA
 bin_avgRRA = avgRRA2 %>% 
@@ -526,19 +527,19 @@ cor.test(comp.data$data$BM_KG, comp.data$data$RS_KM2)
 #####################################################################
 
 netdata$sc = BBmisc::normalize(netdata$c, method = "range", range=c(0,1))
-#netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
+netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
 netdata$se = BBmisc::normalize(netdata$e, method="range", range=c(0,1))
 netdata$sb = BBmisc::normalize(netdata$b, method="range", range=c(0,1))
-netdata$tot = netdata$sc+netdata$se+netdata$sb
-neworder = netdata$species[order((netdata$sc)+(netdata$se)+(netdata$sb))]
+netdata$tot = netdata$sc+netdata$se+netdata$sd+netdata$sb
+neworder = netdata$species[order((netdata$sc)+(netdata$se)+(netdata$sd)+(netdata$sb))]
 neworder = netdata$species[order(netdata$tot)]
 
-netlongsc = tidyr::pivot_longer(netdata, cols=c(sc,sb,se), names_to="Measure", values_to="Value")
+netlongsc = tidyr::pivot_longer(netdata, cols=c(sc,sb,sd,se), names_to="Measure", values_to="Value")
 
 netlongsc$species = factor(netlongsc$species, levels = neworder)
 
 netlongsc$Measure=as.factor(netlongsc$Measure)
-levels(netlongsc$Measure)=c("Betweenness","Closeness","Eigenvector")
+levels(netlongsc$Measure)=c("Betweenness","Closeness","Degree","Eigenvector")
 
 change = match(c("Grevys zebra","DikDik","Grants gazelle"),as.character(levels(netlongsc$species)))
 levels(netlongsc$species)[change]=c("Grevy's zebra","Dik-dik","Grant's gazelle")
@@ -551,7 +552,7 @@ centscore = ggplot(netlongsc, aes(x=species, y=Measure))+
   theme(aspect.ratio = 1/5, axis.text.x=element_text(angle=90,hjust=1, vjust=0))
 
 centscore
-
+ggsave(here(paste("plots/6_centrality_scores",threshold_used,".png",sep="")), centscore, dpi=300, device="png", width=7, height=5)
 
 
 #### Sharing Matrix ####
@@ -601,3 +602,49 @@ share_matrix
 
 ggsave(here(paste("plots/6_share_matrix",threshold_used,".png", sep="")),
        share_matrix, dpi=300, device="png")
+
+
+
+## Generate a summary 
+
+# Remake long matrix
+mat_long = avgRRA2 %>% 
+  pivot_longer(mOTU_1:endmotu)
+head(mat_long)
+names(mat_long)=c("Host_Species", "mOTU", "RRA")
+# add taxa information
+mat_long = mat_long %>% left_join(tipdata, by="mOTU")
+mat_long$Taxa2 = paste(mat_long$Taxa, sub("mOTU_","",mat_long$mOTU))
+mat_long$Taxa2 = sub("_"," ", mat_long$Taxa2)
+head(mat_long)
+
+parasite_summary = mat_long %>% 
+  group_by(Host_Species, Taxa2) %>% 
+  summarize_at(vars(RRA, Boot), funs(mean)) %>% 
+  pivot_wider(names_from="Host_Species", values_from="RRA") %>% 
+  mutate_at(vars(Buffalo:Warthog), funs(round(.,2)))
+
+write.csv(parasite_summary, here(paste("docs/parasite_summary",threshold_used,".csv")), row.names=F)
+
+
+# Feeding type and family
+gut_fam = mat_long %>% 
+  left_join(hosts, by=c("Host_Species"="Species")) %>% 
+  group_by(Sample_ID, GUT, Family) %>% 
+  summarize_at(vars(RRA), funs(sum)) %>% 
+  group_by(GUT, Family) %>% 
+  summarize_at(vars(RRA), funs(mean)) %>% 
+  mutate_at(vars(Family), funs(ifelse(is.na(Family), "No Match", .)))
+
+gut_fam$Family = as.factor(gut_fam$Family)
+gut_fam$Family = factor(gut_fam$Family, levels=rev(c("Strongylidae","Cooperiidae","Trichostrongylidae","Haemonchidae","Chabertiidae","No Match")))
+
+gut_fam_plot = ggplot(gut_fam,aes(x=GUT, y=Family))+
+  geom_tile(aes(fill=RRA))+
+  scale_fill_gradient(low="white", high="darkred")+
+  theme_bw(base_size=14)+
+  labs(x="Digestive Strategy", y="Parasite Family", fill="Mean RRA")
+gut_fam_plot
+
+ggsave(here(paste("plots/gut_para_families",threshold_used,".png")), device="png", dpi=300)
+          

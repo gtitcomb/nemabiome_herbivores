@@ -37,10 +37,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ1
-data_table = table_1
-tipdata = tipdata1
-threshold_used = "0.002"
+treeNJ = treeNJ2
+data_table = table_2
+tipdata = tipdata2
+threshold_used = "0.02"
 
 # order the tipdata correctly
 tipdata = tipdata[match(treeNJ$tip.label, tipdata$seq_id),]
@@ -99,6 +99,10 @@ pdz = ggplot(PDData_sum, aes(x=GUT, y=pd.obs.z))+
   geom_boxplot(fill=NA, col="gray50", size=1)+
   geom_boxplot(data=PDData_sum, aes(x=GUT, y=pd.obs.z, col=Species), size=0.8, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
   theme_bw(base_size=16)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   labs(x="Gut Type", y="PD Z-Value")+
   scale_color_manual(values=c(animal_colors))+
   guides(col="none")
@@ -108,6 +112,10 @@ pd = ggplot(PDData_sum, aes(x=GUT, y=pd.obs))+
   geom_boxplot(fill=NA, col="gray50", size=1)+
   geom_boxplot(data=PDData_sum, aes(x=GUT, y=pd.obs, col=Species), size=0.8, position=position_dodge(width=0.5), width=0.25, alpha=0.6)+
   theme_bw(base_size=16)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   labs(x="Diet", y="Faith's PD")+
   scale_color_manual(values=c(animal_colors[-13]))+
   #facet_wrap(~Fermentation, scales="free_x")+
@@ -128,6 +136,10 @@ pdplot_sp = PDData_sum %>%
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill="none",col="none")+
   theme_bw(base_size=16)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   scale_color_manual(values=(animal_colors))+
   scale_fill_manual(values=(animal_colors))+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
@@ -162,6 +174,10 @@ pdzplot_sp = PDData_sum %>%
   geom_boxplot(aes(fill=Species), color="gray50",outlier.shape=NA)+
   guides(fill="none",col="none")+
   theme_bw(base_size=16)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   scale_color_manual(values=animal_colors)+
   scale_fill_manual(values=animal_colors)+
   theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))+
@@ -247,6 +263,10 @@ pdz_sp = PDMCMC2 %>%
   geom_point(data=pdz_em, aes(x=GUT, y=emmean), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   labs(x="Gut Type", y="PD Z-Value")+guides(col="none")
 
 pdz_sp
@@ -292,6 +312,10 @@ pd_sp = PDMCMC2 %>%
   geom_point(data=pd_em, aes(x=GUT, y=emmean), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank())+
   labs(x="Gut Type", y="Faith's PD")+guides(col="none")
 
 pd_sp

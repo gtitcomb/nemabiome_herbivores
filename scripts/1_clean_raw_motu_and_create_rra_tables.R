@@ -292,13 +292,13 @@ clust_reads_n2$Sample = clust_reads3$Sample
 # Used repeated rarefaction:
 # clust_n1
 min(clust_reads_n1$reads)
-set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n1[,1:(dim(clust_reads_n1)[2]-2)], 991))
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n1[,1:(dim(clust_reads_n1)[2]-2)], min(clust_reads_n1$reads)))
 # average through stack
 mean_rare1 = as.data.frame(apply(rare_stack, 1:2, mean))
 
 # calculate RRA by dividing by minimum
 clust_reads_n1 = mean_rare1 %>% 
-  mutate_at(vars(mOTU_1:mOTU_488), funs(./991))
+  mutate_at(vars(mOTU_1:mOTU_488), funs(./min(clust_reads_n1$reads)))
 clust_reads_n1$Sample = clust_reads3$Sample
 
 # table 1 is our lower bound
@@ -310,13 +310,13 @@ end1 = dim(table_1)[2]-14
 
 # clust_n2
 min(clust_reads_n2$reads)
-set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n2[,1:(dim(clust_reads_n2)[2]-2)], 748))
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n2[,1:(dim(clust_reads_n2)[2]-2)], min(clust_reads_n2$reads)))
 # average through stack
 mean_rare2 = as.data.frame(apply(rare_stack, 1:2, mean))
 
 # calculate RRA by dividing by minimum
 clust_reads_n2 = mean_rare2 %>% 
-  mutate_at(vars(mOTU_1:mOTU_94), funs(./748))
+  mutate_at(vars(mOTU_1:mOTU_94), funs(./min(clust_reads_n2$reads)))
 clust_reads_n2$Sample = clust_reads3$Sample
 
 # table 1 is our lower bound
@@ -351,7 +351,7 @@ ggplot(mds_data2, aes(x=x1, y=x2))+
   scale_color_manual(values=colors)+
   theme_bw()
 
-table_2[which(mds_data2$x1 < -5),]
+#table_2[which(mds_data2$x1 < -5),]
 
 # exclude remaining controls
 table_1 = table_1 %>% 
@@ -372,7 +372,7 @@ table_2 = table_2 %>%
 
 # double check empty columns
 (which(colSums(table_1[,1:end1])==0))
-
+#table_1 = table_1[,-(which(colSums(table_1[,1:end1])==0))]
 dim(table_1)
 
 f_n_motu1 = dim(table_1[,1:end1])[2]
