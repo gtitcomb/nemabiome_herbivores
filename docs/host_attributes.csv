@@ -1,0 +1,18 @@
+"Species","MSW93_Order","MSW93_Family","MSW93_Genus","MSW93_Species","MSW93_Binomial","BM_KG","RS_KM2","GS","GUT","UNDERSTORY_SP_MEAN"
+"Buffalo","Artiodactyla","Bovidae","Syncerus","caffer","Syncerus_caffer",593,63.8,11.4,"FG",0.88
+"Cattle","Artiodactyla","Bovidae","Bos","taurus","Bos_taurus",619,10.2,120,"FG",0.85
+"DikDik","Artiodactyla","Bovidae","Madoqua","kirkii","Madoqua_kirkii",5,0.092,2.5,"FG",0.37
+"Hartebeest","Artiodactyla","Bovidae","Alcelaphus","buselaphus","Alcelaphus_buselaphus",161,2.75,7,"FG",0.95
+"Kudu","Artiodactyla","Bovidae","Tragelaphus","strepsiceros","Tragelaphus_strepsiceros",206,2,4.93,"FG",0.09
+"Camel","Artiodactyla","Camelidae","Camelus","dromedarius","Camelus_dromedarius",493,10.2,10,"FG",0.04
+"Donkey","Perissodactyla","Equidae","Equus","asinus","Equus_asinus",165,10.2,4.7,"HG",0.88
+"Eland","Artiodactyla","Bovidae","Taurotragus","oryx","Taurotragus_oryx",563,197,17.3,"FG",0.69
+"Elephant","Proboscidea","Elephantidae","Loxodonta","africana","Loxodonta_africana",3825,283,13.96,"HG",0.36
+"Grants gazelle","Artiodactyla","Bovidae","Gazella","granti","Gazella_granti",55,0.71,13.1,"FG",0.49
+"Giraffe","Artiodactyla","Giraffidae","Giraffa","camelopardalis","Giraffa_camelopardalis",965,82.5,6.22,"FG",0.06
+"Grevys zebra","Perissodactyla","Equidae","Equus","grevyi","Equus_grevyi",408,6.77,4.84,"HG",0.98
+"Hippo","Artiodactyla","Hippopotamidae","Hippopotamus","amphibius","Hippopotamus_amphibius",1536,8,14.38,"FG",0.94
+"Impala","Artiodactyla","Bovidae","Aepyceros","melampus","Aepyceros_melampus",53,3.93,23.1,"FG",0.51
+"Plains zebra","Perissodactyla","Equidae","Equus","burchellii","Equus_burchellii",279,8.29,9.58,"HG",0.99
+"Oryx","Artiodactyla","Bovidae","Oryx","gazella","Oryx_gazella",201,61.5,8.41,"FG",0.87
+"Warthog","Artiodactyla","Suidae","Phacochoerus","africanus","Phacochoerus_africanus",83,1.58,3.03,"HG",0.93

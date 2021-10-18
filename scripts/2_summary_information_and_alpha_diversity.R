@@ -73,7 +73,8 @@ threshold_used = "0.02"
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 
-  filter(Species != "Waterbuck")
+  filter(Species != "Waterbuck") %>% 
+  filter(Sample != "MRC_17_HIP_93")
 
 # sample sizes and facts
 

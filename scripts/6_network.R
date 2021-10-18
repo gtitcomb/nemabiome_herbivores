@@ -126,7 +126,14 @@ bin_avgRRA = bin_avgRRA[order(bin_avgRRA$new_tax, bin_avgRRA$N_Hosts),] # this s
 MOTUorder = unique(bin_avgRRA$mOTU)
 bin_avgRRA$mOTU = factor(bin_avgRRA$mOTU, levels=MOTUorder)
 
-psite_distribution = ggplot(bin_avgRRA, aes(x=N_Hosts, y=mOTU))+
+psite_distribution = bin_avgRRA %>% 
+  mutate(new_tax = recode(new_tax, Chabertiidae = "Chabertiidae (nodular worms)",
+         Cooperiidae = "Cooperiidae (cooperia)",
+         Haemonchidae = "Haemonchidae (barber pole worms)",
+         Trichostrongylidae = "Trichostrongylidae (trichostrongyles)",
+         Strongylidae = "Strongylidae (strongyles)",
+         `Strongylida (Order)` = "Strongylida (order)")) %>% 
+  ggplot(aes(x=N_Hosts, y=mOTU))+
   geom_point(aes(col=new_tax), size=1.6)+
   geom_line(aes(col=new_tax, group=new_tax), size=1)+
   scale_x_continuous(breaks=c(1:max(bin_avgRRA$N_Hosts)))+
@@ -144,7 +151,7 @@ psite_distribution = ggplot(bin_avgRRA, aes(x=N_Hosts, y=mOTU))+
   labs(x="Number of Host Species", y="mOTU ID")
 psite_distribution
 
-ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")), width=5, height=15, dpi=300, device="png")
+ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")), width=3, height=12, dpi=300, device="png")
 
 ### Test aggregation ###
 
@@ -163,6 +170,7 @@ plot(fit.nb)
 
 fit.exp = fitdist(bin_avgRRA$N_Hosts, "exp", discrete=T)
 plot(fit.exp)
+fit.exp$aic
 
 # Combine
 distribution_table = data.frame(Distribution = c("Log-Normal", "Exponential", "Negative Binomial", "Poisson"),
@@ -369,7 +377,8 @@ ggplot(netdata, aes(x=log(Distance), y=e))+
 
 netdata %>% 
   dplyr::select(species, c:e, Distance) %>% 
-  pivot_longer(c:e, names_to="metric", values_to="value") %>% 
+  pivot_longer(c:e, names_to="metric", values_to="value") %>%
+  mutate(metric=recode(metric, b="Betweenness", c="Closeness", d="Degree", e="Eigenvector")) %>% 
   ggplot(aes(x=log(Distance), y=value))+
   geom_point(size=3,aes(col=species))+
   scale_color_manual(values=animal_colors[-14])+ 
@@ -377,6 +386,7 @@ netdata %>%
   guides(col=F)+
   ggrepel::geom_text_repel(aes(label=species))+
   facet_wrap(~metric, scales="free_y")+
+  labs(x="log(Mean Phylogenetic Distance)", y="Value")+
   theme_bw()
 
 
@@ -466,44 +476,55 @@ comp.data$data$c = comp.data$data$c * 100
 # don't use log(BM) and log(RS) at the same time
 c_mod = pgls(c~ GUT + UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data = comp.data, lambda=1, kappa=1, delta=1)
 dredge(c_mod)
-c_mod = pgls(c~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
-summary(c_mod)
+c_mod2 = pgls(c~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
+summary(c_mod2)
 cmodval = as.data.frame(summary(c_mod)$coefficients %>% round(.,3))
 cmodval$Predictor = row.names(cmodval)
 cmodval$Metric = "Closeness"
-
+cmodval2 = as.data.frame(summary(c_mod2)$coefficients %>% round(.,3))
+cmodval2$Predictor = row.names(cmodval2)
+cmodval2$Metric = "Closeness"
 
 # eigenvector
 e_mod = pgls(e ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data=comp.data, lambda=1, kappa=1, delta=1)
 dredge(e_mod)
-e_mod = pgls(e ~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
+e_mod2 = pgls(e ~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
 emodval = as.data.frame(summary(e_mod)$coefficients %>% round(.,3))
 emodval$Predictor = row.names(emodval)
 emodval$Metric = "Eigenvector"
-
+emodval2 = as.data.frame(summary(e_mod2)$coefficients %>% round(.,3))
+emodval2$Predictor = row.names(emodval2)
+emodval2$Metric = "Eigenvector"
 
 # betweenness
 b_mod = pgls(b ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) +GS, data=comp.data, lambda=1, kappa=1, delta=1)
 dredge(b_mod)
-b_mod = pgls(b ~ 1, data=comp.data, lambda=1, kappa=1, delta=1)
+b_mod2 = pgls(b ~ 1, data=comp.data, lambda=1, kappa=1, delta=1)
 bmodval = as.data.frame(summary(b_mod)$coefficients %>% round(.,3))
 bmodval$Predictor = row.names(bmodval)
 summary(b_mod)
 bmodval$Metric = "Betweenness"
-
+bmodval2 = as.data.frame(summary(b_mod2)$coefficients %>% round(.,3))
+bmodval2$Predictor = row.names(bmodval2)
+summary(b_mod2)
+bmodval2$Metric = "Betweenness"
 
 # degree -- not relevant for 0.002 dataset
 d_mod = pgls(d ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data=comp.data, lambda=1,kappa=1,delta=1)
 dredge(d_mod)
-d_mod = pgls(d ~ 1, data=comp.data, lambda=1,kappa=1,delta=1)
+d_mod2 = pgls(d ~ 1, data=comp.data, lambda=1,kappa=1,delta=1)
 dmodval = as.data.frame(summary(d_mod)$coefficients %>% round(.,3))
 dmodval$Predictor = row.names(dmodval)
 dmodval$Metric = "Degree"
 summary(d_mod)
-
+dmodval2 = as.data.frame(summary(d_mod2)$coefficients %>% round(.,3))
+dmodval2$Predictor = row.names(dmodval2)
+dmodval2$Metric = "Degree"
+summary(d_mod2)
 
 # collect values in table
 network_table_vals = as.data.frame(rbind(dmodval, emodval, bmodval, cmodval))
+network_table_vals2 = as.data.frame(rbind(dmodval2, emodval2, bmodval2, cmodval2))
 
 network_table_vals = network_table_vals %>% 
   mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,3))) %>% 
@@ -513,9 +534,17 @@ network_table_vals = network_table_vals %>%
   dplyr::select(Metric, Predictor, Value)
 network_table_vals
 
+network_table_vals2 = network_table_vals2 %>% 
+  mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,3))) %>% 
+  mutate(M = paste(Estimate, " +/- ", `Std. Error`), V = paste(`t value`, " (", `Pr(>|t|)`, ")", sep="")) %>% 
+  dplyr::select(Metric, Predictor, M, V) %>% 
+  pivot_longer(M:V, names_to="Measure", values_to = "Value") %>% 
+  dplyr::select(Metric, Predictor, Value)
+network_table_vals2
 
 # export table
 write.csv(network_table_vals, here(paste("docs/6_network_table_vals",threshold_used,".csv",sep="")), row.names = F)
+write.csv(network_table_vals2, here(paste("docs/6_network_table_vals2_",threshold_used,".csv",sep="")), row.names = F)
 
 ### Cor between log(BM) and log(RS)
 m1 = lm(c ~ GS+GUT+log(BM_KG)+log(RS_KM2), data=comp.data$data)
@@ -558,7 +587,8 @@ ggsave(here(paste("plots/6_centrality_scores",threshold_used,".png",sep="")), ce
 #### Sharing Matrix ####
 lar = avgRRA2 %>% 
   pivot_longer(mOTU_1:endmotu) %>% 
-  filter(value >0)
+  filter(value >0) %>% 
+  filter(Species!="Kudu")
 g3 = graph_from_data_frame(lar, directed=F)
 V(g3)$type = bipartite_mapping(g3)$type 
 
@@ -578,30 +608,32 @@ names(addto)="N_H_Share"
 addto$Species = rownames(addto)
 addto = addto[order(addto$N_H_Share),]
 
-proj_host_data3$Species1 = factor(proj_host_data3$Species1, levels= c("Camel", "DikDik", "Giraffe", "Kudu", "Eland", "Grants gazelle", "Impala", "Buffalo", "Cattle", "Hartebeest",  "Oryx", "Waterbuck",  "Donkey", "Grevys zebra", "Plains zebra", "Hippo","Elephant","Warthog"))
-proj_host_data3$Species2 = factor(proj_host_data3$Species2, levels=c("Camel", "DikDik", "Giraffe", "Kudu", "Eland", "Grants gazelle", "Impala", "Buffalo", "Cattle", "Hartebeest", "Oryx", "Waterbuck",  "Donkey", "Grevys zebra", "Plains zebra", "Hippo","Elephant","Warthog"))
+proj_host_data3$Species1 = factor(proj_host_data3$Species1, levels= rev(c("Giraffe", "Eland","Camel", "Oryx","Buffalo", "Hartebeest", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo","Plains zebra", "Grevys zebra","Elephant","Warthog")))
+proj_host_data3$Species2 = factor(proj_host_data3$Species2, levels=c("Giraffe", "Eland","Camel", "Oryx","Buffalo", "Hartebeest", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo","Plains zebra", "Grevys zebra","Elephant","Warthog"))
 
 
 # add self
 g_ad = get.adjacency(g3, sparse=F) %>% as.data.frame()
-self = colSums(g_ad)[1:17]
+self = colSums(g_ad)[1:16]
 add_self = data.frame(Species1=names(self), Species2=names(self), N_Shared=self)
 proj_host_data3=rbind(proj_host_data3, add_self)
 
-levels(proj_host_data3$Species1)[c(2,6,14)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
-levels(proj_host_data3$Species2)[c(2,6,14)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
+levels(proj_host_data3$Species1)[c(9,8,3)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
+levels(proj_host_data3$Species2)[c(8,9,14)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
 
 share_matrix = ggplot(proj_host_data3, aes(x=Species1, y=Species2))+
   geom_tile(aes(fill=N_Shared))+
   scale_fill_gradient(low="gray90", high="red")+
   geom_text(aes(label=ifelse(N_Shared >0, round(N_Shared, 2),"")))+
   theme_bw(base_size=14)+
-  theme(axis.text.x = element_text(angle=90, hjust=0, vjust=0))
+  theme(axis.text.x = element_text(angle=90, hjust=0, vjust=0))+
+  theme(axis.text.y = element_text(hjust=0, vjust=1))
+
 
 share_matrix
 
 ggsave(here(paste("plots/6_share_matrix",threshold_used,".png", sep="")),
-       share_matrix, dpi=300, device="png")
+       share_matrix, dpi=300, device="png", width=10, height=7)
 
 
 
@@ -646,5 +678,26 @@ gut_fam_plot = ggplot(gut_fam,aes(x=GUT, y=Family))+
   labs(x="Digestive Strategy", y="Parasite Family", fill="Mean RRA")
 gut_fam_plot
 
-ggsave(here(paste("plots/gut_para_families",threshold_used,".png")), device="png", dpi=300)
+gut_plot_data = mat_long %>% 
+  left_join(hosts, by=c("Host_Species"="Species")) %>% 
+  group_by(Sample_ID, GUT, Family) %>% 
+  summarize_at(vars(RRA), funs(sum)) %>% 
+  group_by(GUT, Family) %>% 
+  mutate_at(vars(Family), funs(ifelse(is.na(.), "No match", .))) %>% 
+  mutate(Family = recode(Family, Chabertiidae = "Chabertiidae (nodular worms)",
+                          Cooperiidae = "Cooperiidae (cooperia)",
+                          Haemonchidae = "Haemonchidae (barber pole worms)",
+                          Trichostrongylidae = "Trichostrongylidae (trichostrongyles)",
+                          Strongylidae = "Strongylidae (strongyles)"))
+gut_plot_data$Family=as.factor(gut_plot_data$Family)
+gut_plot_data$Family = factor(gut_plot_data$Family,
+                              levels=levels(gut_plot_data$Family)[c(1,2,3,5,6,4)])
+
+gut_fam = ggplot(gut_plot_data, aes(x=GUT, y=RRA))+
+  geom_boxplot(aes(fill=Family), position="dodge")+
+  #geom_errorbar(aes(col=Family, ymin=mean-se, ymax=mean+se), position=position_dodge(width=0.5))
+  theme_bw(base_size=14)+
+  labs(x="Digestive Strategy", y="RRA")
+
+ggsave(here(paste("plots/6_gut_para_families",threshold_used,".png")), gut_fam, device="png", dpi=300)
           
