@@ -34,7 +34,7 @@ tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 # decide which dataframe
 treeNJ = treeNJ2
 data_table = table_2
-tipdata = tipdata1
+tipdata = tipdata2
 threshold_used = "0.02"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
@@ -336,6 +336,9 @@ MRCdist = vegdist(dplyr::select(motu_agg2, mOTU_1:endmotu), distance="bray")
 # check env and dist match
 envMRC$Species == motu_agg2$Species
 
+envMRC = envMRC %>% 
+  mutate(GUT = recode(GUT, `FG*`="FG"))
+
 # run together
 par(mfrow=c(2,2))
 ordisurf(ordMRCagg ~ log(BM_KG), envMRC);
@@ -422,16 +425,16 @@ ptree = cophenetic(treeNJ)
 gllink = left_join(motu_agg, dplyr::select(data_table_aggregated, Species, MSW93_Binomial))%>%unique()
 rownames(gllink)=gllink$MSW93_Binomial
 rownames(gllink)[c(5,6,9,16)]=c("Equus_africanus","Tragelaphus_oryx","Nanger_granti","Equus_quagga")
-gllink2 = as.data.frame(gllink[,-c(1,82)])
+gllink2 = as.data.frame(gllink[,-c(1,dim(gllink)[2])])
 rownames(gllink2) = rownames(gllink)
 
-# Prepare and run analysis
-D = prepare_paco_data(H=htree, P=ptree, HP=gllink2)
-
-# Commented out due to running time; uncomment to run
-
-#D = add_pcoord(D, correction="cailliez")
-#
+# # Prepare and run analysis
+# D = prepare_paco_data(H=htree, P=ptree, HP=gllink2)
+# 
+# # Commented out due to running time; uncomment to run
+# 
+# D = add_pcoord(D, correction="cailliez")
+# 
 # D = PACo(D, nperm=1000, seed=12, method="r0", symmetric=F)
 # D2 = PACo(D, nperm=1000, seed=12, method="r0", symmetric=T)
 # 

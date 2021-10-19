@@ -67,9 +67,9 @@ cor.test(tab1$richness, tab2$richness)
 ##### Dataset-specific ############# 
 
 # decide which data frame
-tab = tab2
+tab = tab1
 # type in the threshold as a character to use for saving plots correctly
-threshold_used = "0.02" 
+threshold_used = "0.002" 
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 

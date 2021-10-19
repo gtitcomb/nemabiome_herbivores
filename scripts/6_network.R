@@ -31,10 +31,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
-threshold_used = "0.02"
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 endmotu = names(data_table)[dim(data_table)[2]-27]
@@ -151,7 +151,7 @@ psite_distribution = bin_avgRRA %>%
   labs(x="Number of Host Species", y="mOTU ID")
 psite_distribution
 
-ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")), width=3, height=12, dpi=300, device="png")
+ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")),psite_distribution, width=3, height=12, dpi=300, device="png")
 
 ### Test aggregation ###
 

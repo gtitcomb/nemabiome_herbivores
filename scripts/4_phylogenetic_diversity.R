@@ -37,10 +37,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
-threshold_used = "0.02"
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 # order the tipdata correctly
 tipdata = tipdata[match(treeNJ$tip.label, tipdata$seq_id),]
