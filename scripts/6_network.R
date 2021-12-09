@@ -127,7 +127,7 @@ MOTUorder = unique(bin_avgRRA$mOTU)
 bin_avgRRA$mOTU = factor(bin_avgRRA$mOTU, levels=MOTUorder)
 
 psite_distribution = bin_avgRRA %>% 
-  mutate(new_tax = recode(new_tax, Chabertiidae = "Chabertiidae (nodular worms)",
+  mutate(new_tax = dplyr::recode(new_tax, Chabertiidae = "Chabertiidae (nodular worms)",
          Cooperiidae = "Cooperiidae (cooperia)",
          Haemonchidae = "Haemonchidae (barber pole worms)",
          Trichostrongylidae = "Trichostrongylidae (trichostrongyles)",
@@ -608,8 +608,8 @@ names(addto)="N_H_Share"
 addto$Species = rownames(addto)
 addto = addto[order(addto$N_H_Share),]
 
-proj_host_data3$Species1 = factor(proj_host_data3$Species1, levels= rev(c("Giraffe", "Eland","Camel", "Oryx","Buffalo", "Hartebeest", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo","Plains zebra", "Grevys zebra","Elephant","Warthog")))
-proj_host_data3$Species2 = factor(proj_host_data3$Species2, levels=c("Giraffe", "Eland","Camel", "Oryx","Buffalo", "Hartebeest", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo","Plains zebra", "Grevys zebra","Elephant","Warthog"))
+proj_host_data3$Species1 = factor(proj_host_data3$Species1, levels= rev(c("Giraffe", "Eland","Camel", "Oryx", "Hartebeest","Buffalo", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo","Warthog","Plains zebra","Grevys zebra", "Elephant")))
+proj_host_data3$Species2 = factor(proj_host_data3$Species2, levels=c("Giraffe", "Eland","Camel", "Oryx", "Hartebeest","Buffalo", "Impala", "DikDik","Grants gazelle", "Donkey", "Cattle", "Hippo", "Warthog","Plains zebra","Grevys zebra", "Elephant"))
 
 
 # add self
@@ -618,8 +618,8 @@ self = colSums(g_ad)[1:16]
 add_self = data.frame(Species1=names(self), Species2=names(self), N_Shared=self)
 proj_host_data3=rbind(proj_host_data3, add_self)
 
-levels(proj_host_data3$Species1)[c(9,8,3)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
-levels(proj_host_data3$Species2)[c(8,9,14)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
+levels(proj_host_data3$Species1)[c(9,8,2)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
+levels(proj_host_data3$Species2)[c(8,9,15)]=c("Dik-dik","Grant's gazelle","Grevy's zebra")
 
 share_matrix = ggplot(proj_host_data3, aes(x=Species1, y=Species2))+
   geom_tile(aes(fill=N_Shared))+
@@ -679,12 +679,12 @@ gut_fam_plot = ggplot(gut_fam,aes(x=GUT, y=Family))+
 gut_fam_plot
 
 gut_plot_data = mat_long %>% 
-  left_join(hosts, by=c("Host_Species"="Species")) %>% 
-  group_by(Sample_ID, GUT, Family) %>% 
+  left_join(dplyr::select(data_table,Sample, Species,GUT), by=c("Host_Species"="Species")) %>% 
+  group_by(Sample, GUT, Family) %>% 
   summarize_at(vars(RRA), funs(sum)) %>% 
   group_by(GUT, Family) %>% 
   mutate_at(vars(Family), funs(ifelse(is.na(.), "No match", .))) %>% 
-  mutate(Family = recode(Family, Chabertiidae = "Chabertiidae (nodular worms)",
+  mutate(Family = dplyr::recode(Family, Chabertiidae = "Chabertiidae (nodular worms)",
                           Cooperiidae = "Cooperiidae (cooperia)",
                           Haemonchidae = "Haemonchidae (barber pole worms)",
                           Trichostrongylidae = "Trichostrongylidae (trichostrongyles)",
@@ -698,6 +698,7 @@ gut_fam = ggplot(gut_plot_data, aes(x=GUT, y=RRA))+
   #geom_errorbar(aes(col=Family, ymin=mean-se, ymax=mean+se), position=position_dodge(width=0.5))
   theme_bw(base_size=14)+
   labs(x="Digestive Strategy", y="RRA")
+gut_fam
 
 ggsave(here(paste("plots/6_gut_para_families",threshold_used,".png")), gut_fam, device="png", dpi=300)
           

@@ -12,3 +12,4 @@ data/raw_motu_table_mpala_nematodes.csv
 data/new_mammal_tree_pruned.newick
 data/Nematode_ITS2_1.0.0_dada2.fasta
 data/host_metadata.csv
+scripts/summary_information_and_alpha_diversity_with_phylo_stuff.R

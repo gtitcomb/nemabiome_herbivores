@@ -32,10 +32,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
-threshold_used = "0.02"
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 
@@ -337,7 +337,7 @@ MRCdist = vegdist(dplyr::select(motu_agg2, mOTU_1:endmotu), distance="bray")
 envMRC$Species == motu_agg2$Species
 
 envMRC = envMRC %>% 
-  mutate(GUT = recode(GUT, `FG*`="FG"))
+  mutate(GUT = dplyr::recode(GUT, `FG*`="FG"))
 
 # run together
 par(mfrow=c(2,2))
