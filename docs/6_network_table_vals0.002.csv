@@ -1,41 +1,19 @@
-"Metric","Predictor","Value"
-"Degree","(Intercept)","15  +/-  0"
-"Degree","(Intercept)","1269513565664919 (0)"
-"Degree","GUTHG","0  +/-  0"
-"Degree","GUTHG","2.766 (0.02)"
-"Degree","UNDERSTORY_SP_MEAN","0  +/-  0"
-"Degree","UNDERSTORY_SP_MEAN","-0.567 (0.583)"
-"Degree","log(BM_KG)","0  +/-  0"
-"Degree","log(BM_KG)","-0.446 (0.665)"
-"Degree","GS","0  +/-  0"
-"Degree","GS","0.213 (0.836)"
-"Eigenvector","(Intercept)","0.584  +/-  0.344"
-"Eigenvector","(Intercept)","1.695 (0.121)"
-"Eigenvector","GUTHG","-0.458  +/-  0.262"
-"Eigenvector","GUTHG","-1.746 (0.111)"
-"Eigenvector","UNDERSTORY_SP_MEAN","-0.165  +/-  0.19"
-"Eigenvector","UNDERSTORY_SP_MEAN","-0.873 (0.403)"
-"Eigenvector","log(BM_KG)","0.023  +/-  0.034"
-"Eigenvector","log(BM_KG)","0.674 (0.516)"
-"Eigenvector","GS","-0.002  +/-  0.008"
-"Eigenvector","GS","-0.272 (0.791)"
-"Betweenness","(Intercept)","-6.952  +/-  31.784"
-"Betweenness","(Intercept)","-0.219 (0.831)"
-"Betweenness","GUTHG","1.347  +/-  24.189"
-"Betweenness","GUTHG","0.056 (0.957)"
-"Betweenness","UNDERSTORY_SP_MEAN","-19.033  +/-  17.507"
-"Betweenness","UNDERSTORY_SP_MEAN","-1.087 (0.302)"
-"Betweenness","log(BM_KG)","3.974  +/-  3.183"
-"Betweenness","log(BM_KG)","1.249 (0.24)"
-"Betweenness","GS","-0.422  +/-  0.702"
-"Betweenness","GS","-0.602 (0.561)"
-"Closeness","(Intercept)","0.143  +/-  0.038"
-"Closeness","(Intercept)","3.803 (0.003)"
-"Closeness","GUTHG","-0.059  +/-  0.029"
-"Closeness","GUTHG","-2.048 (0.068)"
-"Closeness","UNDERSTORY_SP_MEAN","-0.029  +/-  0.021"
-"Closeness","UNDERSTORY_SP_MEAN","-1.412 (0.188)"
-"Closeness","log(BM_KG)","0.004  +/-  0.004"
-"Closeness","log(BM_KG)","0.932 (0.373)"
-"Closeness","GS","0  +/-  0.001"
-"Closeness","GS","-0.355 (0.73)"
+Metric,Predictor,Estimate,Std. Error,t value,Pr(>|t|),Predictor,Estimate,Std. Error,t value,Pr(>|t|)
+Eigenvector,(Intercept),0.872,0.427,2.042,0.072,(Intercept),0.66,0.236,2.789,0.015
+,Gut [Hind],-0.362,0.272,-1.332,0.216,GUTHG,-0.52,0.228,-2.284,0.04
+,Understory,-0.252,0.202,-1.247,0.244,,,,,
+,ln(Body mass),0.034,0.035,0.953,0.365,,,,,
+,Group size,-0.002,0.007,-0.279,0.787,,,,,
+,Evol. Distinct.,-0.007,0.006,-1.114,0.294,,,,,
+Betweenness,(Intercept),18.998,38.211,0.497,0.631,(Intercept),5.044,17.461,0.289,0.777
+,Gut [Hind],8.196,24.344,0.337,0.744,,,,,
+,Understory,-24.759,18.104,-1.368,0.205,,,,,
+,ln(Body mass),4.659,3.154,1.477,0.174,,,,,
+,Group size,-0.441,0.671,-0.657,0.528,,,,,
+,Evol. Distinct.,-0.564,0.533,-1.057,0.318,,,,,
+Closeness,(Intercept),0.189,0.043,4.412,0.002,(Intercept),0.154,0.027,5.599,<0.001
+,Gut [Hind],-0.044,0.027,-1.612,0.141,GUTHG,-0.07,0.026,-2.655,0.02
+,Understory,-0.043,0.02,-2.104,0.065,,,,,
+,ln(Body mass),0.005,0.004,1.457,0.179,,,,,
+,Group size,0,0.001,-0.418,0.686,,,,,
+,Evol. Distinct.,-0.001,0.001,-1.768,0.111,,,,,

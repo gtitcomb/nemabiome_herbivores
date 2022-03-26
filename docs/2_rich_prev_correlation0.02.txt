@@ -1,8 +1,0 @@
-"."
-"statistic.S"	"202.624041669655"
-"p.value"	"0.000502403246011718"
-"estimate.rho"	"0.75168622344405"
-"null.value.rho"	"0"
-"alternative"	"two.sided"
-"method"	"Spearman's rank correlation rho"
-"data.name"	"compare$mean and compare$richness"

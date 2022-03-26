@@ -4,14 +4,13 @@
 # Georgia Titcomb
 
 # Use Ctrl+Shift+F10 to refresh whole workspace
-
 ##################
-# load packages
+
 library(microDecon)
 library(tidyverse)
 library(vegan)
 
-# navigate to parent folder before loading 'here' library
+# navigate to parent folder before loading this library
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 setwd("../")
 library(here) 
@@ -30,7 +29,6 @@ elbow_data = data.frame(sum90 = length(levels(as.factor(reads$cluster_sumatra90)
                         sum98 = length(levels(as.factor(reads$cluster_sumatra98))),
                         sum99 = length(levels(as.factor(reads$cluster_sumatra99))))
 
-# make cluster plot
 clust_elbow = elbow_data %>% 
   pivot_longer(sum90:sum99, names_to="Clustering_Level", values_to="N_mOTUs") %>%
   mutate(clust_level = as.numeric(sub("sum","",Clustering_Level))) %>% 
@@ -43,20 +41,50 @@ clust_elbow = elbow_data %>%
   labs(x="Clustering Level", y="Number of mOTUs in dataset")
 clust_elbow
 
-# save
-#ggsave(here("plots/1_clust_elbow.png"), dpi=300, height=5, width=5, device="png")
+ggsave(here("plots/1_clust_elbow.png"), dpi=300, height=5, width=5, device="png")
 
 
 # combine with plate plan data
 plate_plan = read.csv(here("data/plate_plan_mpala_nematodes.csv"))
 head(plate_plan)
 
+##################################################
+#### Digression
+# calculate sequence distances for forward and reverse
+# taglist = sub(":","",plate_plan$Tag_Combo)
+# barcode_distance = data.frame(tags1 = taglist,tags2=taglist, distance=0)
+# barcode_distance = barcode_distance %>% pivot_wider(names_from = tags2, values_from=distance)
+# barcode_distance = barcode_distance %>% 
+#   pivot_longer(-tags1) 
+# seqDist(barcode_distance$tags1[3],barcode_distance$name[3])
+# 
+# library(alakazam)
+# for(i in 1:length(barcode_distance$value)){
+#   barcode_distance$value[i] = seqDist(barcode_distance$tags1[i], barcode_distance$name[i])
+# }
+# 
+# ggplot(barcode_distance, aes(x=tags1, y=name))+
+#   geom_tile(aes(fill=value))
+# 
+# 
+# lower_distance = barcode_distance %>% 
+#   filter(value<5) %>% 
+#   filter(value>0)
+# 
+# plate_plan$Tag_Combo2 = sub(":","",plate_plan$Tag_Combo)
+# lower_distance$sample1 = plate_plan[match(lower_distance$tags1, plate_plan$Tag_Combo2),]$Sample
+# lower_distance$sample2 = plate_plan[match(lower_distance$name, plate_plan$Tag_Combo2),]$Sample
+# 
+# blank_ld = lower_distance[grep("Blank", lower_distance$sample1),] 
+# levels(as.factor(blank_ld$sample1))
+######################################################
+
 # transpose samples
 names(reads) = sub("sample.","",names(reads))
 
 # any mismatches
-names(reads)[which((names(reads) %in% plate_plan$Sample)==F)]
-plate_plan$Sample[which((plate_plan$Sample %in% names(reads))==F)]
+names(reads)[which((names(reads) %in% plate_plan$Sample2)==F)]
+plate_plan$Sample2[which((plate_plan$Sample %in% names(reads))==F)]
 
 # examine distribution of total reads
 read_dist = as.data.frame(colSums(reads[,28:411]))
@@ -65,7 +93,6 @@ names(read_dist)[1]="Reads"
 
 # join to plate plan
 read_dist = left_join(read_dist, plate_plan)
-# check na
 read_dist %>% 
   filter(is.na(Plate))
 
@@ -76,17 +103,32 @@ read_dist$Sample_type[grep("POS",read_dist$Sample)]="Positive"
 read_dist$Sample_type[grep("NEG",read_dist$Sample)]="Negative"
 read_dist$Sample_type[which(read_dist$Sample_type=="")]="Sample"
 
-# there is tag combination in plate 1 that has caused problems across sequencing runs
+# quick boxplot
+ggplot(read_dist, aes(x=Sample_type, y=Reads))+
+  geom_boxplot()+
+  facet_wrap(~Plate)+
+  scale_y_log10()
+
+# there is one blank in plate one that has caused problems
 # exclude that here
 read_info  = read_dist %>% 
   filter(Sample!="Blank02") %>% 
   group_by(Sample_type) %>% 
   summarize_at(vars(Reads), funs(mean, median, min, max, n()))
 
-#write.table(read_info, here("docs/1_read_info.txt"), sep="\t", row.names=F)
+write.table(read_info, here("docs/1_read_info.txt"), sep="\t", row.names=F)
+
+#reads = reads[,-(which(names(reads)=="Blank02"))]
 
 ########################################################
 # Filtering steps:
+# 1. All Samples with <1000 reads
+# read_dist_1 = read_dist %>% 
+#   filter(Reads >= 1000)
+# read_dist_1 %>% group_by(Sample_type) %>% summarize(n())
+# read_dist %>% group_by(Sample_type) %>% summarize(n())
+# # 37 samples had fewer than 1000 reads
+
 
 # 1. Cluster
 # Calculate the sum of reads for each cluster
@@ -101,7 +143,8 @@ a_n_samp = length(grep("MRC", names(clust_reads)))
 #organizing vector
 col_order = plate_plan %>% 
   arrange(Species) %>% 
-  dplyr::select(Sample) 
+  dplyr::select(Sample) #%>% 
+  #filter(Sample != "Blank02")
 col_order
 
 # put negs with blanks
@@ -109,6 +152,7 @@ grep("NEG",col_order$Sample)
 col_order = col_order[c(1:47,324,325,326, 48:323,327:384),]
 
 clust_reads = clust_reads[,c(1,match(col_order,names(clust_reads)))]
+
 
 # 2. Use decontaminator
 read_to_decontam = clust_reads %>% 
@@ -189,10 +233,8 @@ rra_sensitivity = function(data, startcol, endcol, thresholds){
   return(store)
 }
 
-# run function
 sens = rra_sensitivity(clust_reads3, "mOTU_1", "mOTU_568", thresholds = seq(from = 0, to=0.03, by=0.001))
 
-# create plot
 rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
   geom_point()+
   geom_path()+
@@ -200,15 +242,13 @@ rra_elbow = ggplot(sens, aes(x=thresh, y=n_mOTUs))+
   labs(x="RRA Threshold", y="Number of mOTUs in dataset")+
   geom_vline(xintercept = c(0.002, 0.02), linetype="dotted", col="red", size=1)
 rra_elbow
-
-# save
-#ggsave(here("plots/1_rra_elbow.png"), dpi=300, height=5, width=5, device="png")
+ggsave(here("plots/1_rra_elbow.png"), dpi=300, height=5, width=5, device="png")
 
 
 #######
 # remove RRA lower threshold
 
-# Table 1: drop mOTUs representing less than .2% of reads in each sample
+# drop mOTUs representing less than .2% of reads in each sample
 decision_include = clust_reads3 %>% 
   mutate_at(vars(mOTU_1:mOTU_568), funs(./reads)) %>% 
   mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. < 0.002, 0,.))) %>% 
@@ -227,7 +267,7 @@ clust_reads_n1$reads = rowSums(clust_reads_n1)
 clust_reads_n1$Sample = clust_reads3$Sample
 
 
-# Table 2: drop mOTUs representing less than 2% of reads in each sample
+# drop mOTUs representing less than 2% of reads in each sample
 decision_include = clust_reads3 %>% 
   mutate_at(vars(mOTU_1:mOTU_568), funs(./reads)) %>% 
   mutate_at(vars(mOTU_1:mOTU_568), funs(ifelse(. < 0.02, 0,.))) %>% 
@@ -247,32 +287,77 @@ dim(clust_reads_n2)
 clust_reads_n2$reads = rowSums(clust_reads_n2)
 clust_reads_n2$Sample = clust_reads3$Sample
 
+# write out unrarefied
+#write.csv(clust_reads_n2, "data/unrarefied2pct.csv", row.names=F)
+#write.csv(clust_reads_n1, "data/unrarefied02pct.csv", row.names=F)
+
+
+# rarefy to 1000 reads
+# Used repeated rarefaction:
+# clust_n1
+min(clust_reads_n1$reads)
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n1[,1:(dim(clust_reads_n1)[2]-2)], min(clust_reads_n1$reads)))
+# average through stack
+mean_rare1 = as.data.frame(apply(rare_stack, 1:2, mean))
 
 # calculate RRA by dividing by minimum
-clust_reads_n1 = clust_reads_n1 %>% 
-  mutate_at(vars(mOTU_1:mOTU_488), funs(./reads))
+clust_reads_n1 = mean_rare1 %>% 
+  mutate_at(vars(mOTU_1:mOTU_488), funs(./min(clust_reads_n1$reads)))
 clust_reads_n1$Sample = clust_reads3$Sample
 
 # table 1 is our lower bound
 table_1 = left_join(clust_reads_n1, read_dist, by="Sample")
-names(table_1)
+head(table_1)
 dim(table_1)
-end1 = dim(table_1)[2]-15
+end1 = dim(table_1)[2]-14
 
-# Table 2
+
+# clust_n2
+min(clust_reads_n2$reads)
+set.seed(0); rare_stack = replicate(100, rrarefy(clust_reads_n2[,1:(dim(clust_reads_n2)[2]-2)], min(clust_reads_n2$reads)))
+# average through stack
+mean_rare2 = as.data.frame(apply(rare_stack, 1:2, mean))
+
 # calculate RRA by dividing by minimum
-clust_reads_n2 = clust_reads_n2 %>% 
-  mutate_at(vars(mOTU_1:mOTU_94), funs(./reads))
+clust_reads_n2 = mean_rare2 %>% 
+  mutate_at(vars(mOTU_1:mOTU_94), funs(./min(clust_reads_n2$reads)))
 clust_reads_n2$Sample = clust_reads3$Sample
 
-# table 2
+# table 1 is our lower bound
 table_2 = left_join(clust_reads_n2, read_dist, by="Sample")
-names(table_2)
+head(table_2)
 dim(table_2)
-end2 = dim(table_2)[2]-15
+end2 = dim(table_2)[2]-14
 
 
-# exclude remaining positive controls
+#quick mds visual
+nmds1 = metaMDS(table_1[,1:end1])
+plot(nmds1)
+levels(as.factor(table_1$Species))
+mds_data1 = data.frame(x1 = nmds1$points[,1], x2=nmds1$points[,2], sample_type=table_1$Sample_type, species=table_1$Species, sample=table_1$Sample, reads=table_1$Reads)
+colors = c( "violet", "orange", "violet","blue","magenta", "blue2", "green", "orange", "blue", "magenta",
+           "blue", "green", "magenta", "blue", "blue", "blue", "magenta", "red", "green", "magenta")
+ggplot(mds_data1, aes(x=x1, y=x2))+
+  geom_point(aes(col=species), alpha=0.2)+
+  ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
+  scale_fill_manual(values=colors)+
+  scale_color_manual(values=colors)+
+  theme_bw()
+
+# 
+nmds2 = metaMDS(table_2[,1:end2])
+plot(nmds2)
+mds_data2 = data.frame(x1 = nmds2$points[,1], x2=nmds2$points[,2], sample_type=table_2$Sample_type, species=table_2$Species, sample=table_2$Sample, reads=table_2$Reads)
+ggplot(mds_data2, aes(x=x1, y=x2))+
+  geom_point(aes(col=species), alpha=0.2)+
+  ggConvexHull::geom_convexhull(aes(fill=species), alpha=0.2)+
+  scale_fill_manual(values=colors)+
+  scale_color_manual(values=colors)+
+  theme_bw()
+
+#table_2[which(mds_data2$x1 < -5),]
+
+# exclude remaining controls
 table_1 = table_1 %>% 
   filter(Sample_type=="Sample")
 table_2 = table_2 %>% 
@@ -291,28 +376,32 @@ table_2 = table_2 %>%
 
 # double check empty columns
 (which(colSums(table_1[,1:end1])==0))
+#table_1 = table_1[,-(which(colSums(table_1[,1:end1])==0))]
 dim(table_1)
 
 f_n_motu1 = dim(table_1[,1:end1])[2]
 f_n_samp1 = dim(table_1[,1:end1])[1]
 
 table_1 = table_1 %>% 
-  rename(Filtered_Reads = reads)
+  rename(Filtered_Reads = Reads)
 
 # double check empty columns
 (which(colSums(table_2[,1:end2])==0)) # this should be none
+
 dim(table_2)
 
 f_n_motu2 = dim(table_2[,1:end2])[2]
 f_n_samp2 = dim(table_2[,1:end2])[1]
 
 table_2 = table_2 %>% 
-  rename(Filtered_Reads = reads)
+  rename(Filtered_Reads = Reads)
+
+# there are 15 metadata columns, so this should be 110 and 94 mOTUs respectively
 
 ##############################
 # save the cleaned data tables
-write.csv(dplyr::select(table_1, mOTU_1:mOTU_488, Sample, Filtered_Reads), here("data/RRA_table_1.csv"), row.names=F)
-write.csv(dplyr::select(table_2, mOTU_1:mOTU_94, Sample, Filtered_Reads), here("data/RRA_table_2.csv"), row.names=F)
+write.csv(dplyr::select(table_1, mOTU_1:Filtered_Reads), here("data/RRA_table_1.csv"), row.names=F)
+write.csv(dplyr::select(table_2, mOTU_1:Filtered_Reads), here("data/RRA_table_2.csv"), row.names=F)
 
 # sample and otu filtering summary
 filt_summary = data.frame(step = c("initial","decontam","less_1000","POS_NA_mOTU","RRA","extras"),

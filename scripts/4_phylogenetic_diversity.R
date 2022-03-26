@@ -14,6 +14,7 @@ library(glmmTMB)
 library(tidyverse)
 library(adegenet)
 library(emmeans)
+library(ggtree)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 setwd("../")
@@ -79,6 +80,10 @@ PDData_sum %>%
   filter(is.na(pd.obs)) %>% 
   group_by(Species) %>% 
   summarize(n())
+
+# exclude NA
+PDData_sum = PDData_sum %>% 
+  filter(is.na(pd.obs)==F)
 
 # Exploratory Plots:
 # relationship between SR and PD
@@ -147,22 +152,40 @@ pdplot_sp = PDData_sum %>%
 pdplot_sp
 
 # total PD by species
-PD_spmod = lm(pd.obs~ Species, data=PDData_sum)
+PD_spmod = glm(pd.obs~ Species, data=PDData_sum, family="gaussian")
 summary(PD_spmod)
 Anova(PD_spmod)
-performance::r2(PD_spmod)[2]
-testResiduals(simulateResiduals(PD_spmod)) # not fantastic
 
-result_1 = data.frame(car::Anova(PD_spmod), R2 = performance::r2(PD_spmod)[2])
+# results
+y_hat = predict(PD_spmod, type="response")
+y_bar = mean(PDData_sum$pd.obs)
+PDtemp = 1-sum((PDData_sum$pd.obs-y_hat)^2)/sum((PDData_sum$pd.obs-y_bar)^2)
+PDtemp
+performance::r2(PD_spmod)
+
+hist(PDData_sum$pd.obs) # data are bounded at 0
+qqnorm(residuals(PD_spmod))
+testResiduals(simulateResiduals(PD_spmod))
+# some deviation
+
+result_1 = data.frame(car::Anova(PD_spmod), R2 = performance::r2(PD_spmod)[1])
 
 empd = emmeans(PD_spmod, ~Species)
 
 # PD diff by species
-PD_spmodz = lm(pd.obs.z ~ Species, data=PDData_sum)
+PD_spmodz = glm(pd.obs.z ~ Species, data=PDData_sum, family="gaussian")
 summary(PD_spmodz)
+Anova(PD_spmodz)
 DHARMa::testResiduals(simulateResiduals(PD_spmodz))
+performance::r2(PD_spmodz)
 
-result_2 = data.frame(car::Anova(PD_spmodz), R2 = performance::r2(PD_spmodz)[2])
+# results
+y_hat = predict(PD_spmodz, type="response")
+y_bar = mean(PDData_sum$pd.obs.z)
+PDztemp = 1-sum((PDData_sum$pd.obs.z-y_hat)^2)/sum((PDData_sum$pd.obs.z-y_bar)^2)
+PDztemp
+
+result_2 = data.frame(car::Anova(PD_spmodz), R2 = PDztemp)
 
 empdz= emmeans(PD_spmodz, ~Species)
 
@@ -203,10 +226,15 @@ tree = drop.tip(tree, c("Tragelaphus_scriptus","Kobus_ellipsiprymnus"))
 
 inv.phylo = inverseA(tree, nodes="TIPS", scale=T)
 
-prior_normal = list(G=list(G1=list(V=1,nu=0.02),
-                           G2=list(V=1,nu=0.02),
-                           G3=list(V=1, nu=0.02)),
-                    R=list(V=1,nu=0.02))
+# using default normal for B, inverse wishart for variance parts
+prior_normal = list(G=list(G1=list(V=1,nu=0.002),
+                           G2=list(V=1,nu=0.002),
+                           G3=list(V=1, nu=0.002)),
+                    R=list(V=1,nu=0.002))
+
+prior_normal2 = list(G=list(G1=list(V=1,nu=0.002),
+                           G2=list(V=1,nu=0.002)),
+                    R=list(V=1,nu=0.002))
 
 PDMCMC = PDData_sum %>% 
   filter(is.na(pd.obs.p)==F)
@@ -231,6 +259,39 @@ model_simple2pd = MCMCglmm(pd.obs.z ~ GUT+ UNDERSTORY_PROP+ GS+ log(BM_KG), rand
 
 plot(model_simple2pd)
 
+# plot autocorrelation function
+plot.acfs = function(x) {
+  n <- dim(x)[2]
+  par(mfrow=c(ceiling(n/2),2), mar=c(3,2,3,0))
+  for (i in 1:n) {
+    acf(x[,i], lag.max=100, main=colnames(x)[i])
+    grid()
+  }
+}
+
+plot.acfs(model_simple2pd$VCV)
+plot.acfs(model_simple2pd$Sol)
+
+# view results
+summary(model_simple2pd)
+
+# non phylo
+set.seed(123)
+model_pd_2 = MCMCglmm(pd.obs.z ~ GUT+ UNDERSTORY_PROP+ GS+ log(BM_KG),
+                           random=~MSW93_Binomial+ Period,
+                           family = "gaussian",
+                           prior=prior_normal2,
+                           data=PDMCMC2,
+                           nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
+
+plot(model_pd_2)
+plot.acfs(model_pd_2$VCV)
+plot.acfs(model_pd_2$Sol)
+
+# view results
+summary(model_pd_2)
+
+
 # Calculate lambda
 lambda_pdz = model_simple2pd$VCV[,'phylo']/
   (model_simple2pd$VCV[,'phylo']+model_simple2pd$VCV[,'units']+model_simple2pd$VCV[,'MSW93_Binomial']+model_simple2pd$VCV[,'Period'])
@@ -242,25 +303,24 @@ MCMCpdz = as.data.frame(summary(model_simple2pd)$solutions)
 MCMCpdz_var = as.data.frame(summary(model_simple2pd)$Gcovariances)
 lambda_pd_z = c(mean = mean(lambda_pdz), mode = posterior.mode(lambda_pdz))
 
+MCMCpdz2 = as.data.frame(summary(model_pd_2)$solutions)
+MCMCpdz_var2 = as.data.frame(summary(model_pd_2)$Gcovariances)
 
 
-PDZglmmtmb = glmmTMB(pd.obs.z ~ GUT+ UNDERSTORY_PROP+ GS+ log(BM_KG) + (1|MSW93_Binomial)+ (1|Period), data=PDMCMC2)
-
-summary(PDZglmmtmb)
-DHARMa::testResiduals(simulateResiduals(PDZglmmtmb))
-
-# Save values
-TMBpdz= as.data.frame(summary(PDZglmmtmb)$coefficients$cond)
-TMBpdz_var = as.data.frame(unlist(summary(PDZglmmtmb)$varcor$cond))
-
-pdz_em = as.data.frame(emmeans(PDZglmmtmb, ~ GUT, type="response"))
+pdz_em = PDMCMC2 %>% 
+  group_by(Species, GUT) %>% 
+  summarize_at(vars(pd.obs.z), funs(mean(., na.rm=T))) %>% 
+  group_by(GUT) %>% 
+  summarize_at(vars(pd.obs.z), funs(mean, sd, n())) %>% 
+  mutate(se=sd/sqrt(n))
+  
 
 ###
 pdz_sp = PDMCMC2 %>% 
   ggplot(aes(x=GUT, y=pd.obs.z))+
   geom_boxplot(aes(col=Species), position=position_dodge(0.8), alpha=0.2)+
-  geom_errorbar(data=pdz_em, aes(x=GUT, y=emmean, ymin=lower.CL, ymax=upper.CL), size=1)+
-  geom_point(data=pdz_em, aes(x=GUT, y=emmean), size=2)+
+  geom_errorbar(data=pdz_em, aes(x=GUT, y=mean, ymin=mean-1.96*se, ymax=mean+1.96*se), size=1)+
+  geom_point(data=pdz_em, aes(x=GUT, y=mean), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
   theme(panel.grid.major.y = element_blank(),
@@ -275,41 +335,62 @@ pdz_sp
 #### Just PD
 # slow model
 set.seed(123)
-model_simple2pd.obs = MCMCglmm(pd.obs ~GUT+UNDERSTORY_PROP+ GS+log(BM_KG),
-                               random=~phylo+MSW93_Binomial+Period,
-                               family = "gaussian",
-                               ginverse=list(phylo=inv.phylo$Ainv),
-                               prior=prior_normal, data=PDMCMC2,
-                               nitt=500000, burnin=10000, thin=250, verbose=F, pl=T)
-summary(model_simple2pd.obs)
+pd_mod_1 = MCMCglmm(pd.obs ~GUT+UNDERSTORY_PROP+ GS+log(BM_KG),
+                    random=~phylo+MSW93_Binomial+Period,
+                    family = "gaussian",
+                    ginverse=list(phylo=inv.phylo$Ainv),
+                    prior=prior_normal,
+                    data=PDMCMC2,
+                    nitt=500000, burnin=10000, thin=250,
+                    verbose=F, pl=T)
+
+plot(pd_mod_1)
+plot.acfs(pd_mod_1$VCV)
+plot.acfs(pd_mod_1$Sol)
+summary(pd_mod_1)
+
+
+set.seed(123)
+pd_mod_2 = MCMCglmm(pd.obs ~GUT+UNDERSTORY_PROP+ GS+log(BM_KG),
+                    random=~MSW93_Binomial+Period,
+                    family = "gaussian",
+                    prior=prior_normal2,
+                    data=PDMCMC2,
+                    nitt=500000, burnin=10000, thin=250,
+                    verbose=F, pl=T)
+
+plot(pd_mod_2)
+plot.acfs(pd_mod_2$VCV)
+plot.acfs(pd_mod_2$Sol)
+summary(pd_mod_2)
+
 
 # Calculate lambda
-lambda_pdobs = model_simple2pd.obs$VCV[,'phylo']/
-  (model_simple2pd.obs$VCV[,'phylo']+model_simple2pd.obs$VCV[,'units']+model_simple2pd.obs$VCV[,'MSW93_Binomial']+model_simple2pd.obs$VCV[,'Period'])
+lambda_pdobs = pd_mod_1$VCV[,'phylo']/
+  (pd_mod_1$VCV[,'phylo']+pd_mod_1$VCV[,'units']+pd_mod_1$VCV[,'MSW93_Binomial']+pd_mod_1$VCV[,'Period'])
 plot(density(lambda_pdobs))
 posterior.mode(lambda_pdobs)
 mean(lambda_pdobs)
 
-MCMCpd = as.data.frame(summary(model_simple2pd.obs)$solutions)
-MCMCpd_var = as.data.frame(summary(model_simple2pd.obs)$Gcovariances)
+MCMCpd = as.data.frame(summary(pd_mod_1)$solutions)
+MCMCpd_var = as.data.frame(summary(pd_mod_1)$Gcovariances)
 lambda_pd = c(mean = mean(lambda_pdobs), mode = posterior.mode(lambda_pdobs))
+MCMCpd2 = as.data.frame(summary(pd_mod_2)$solutions)
+MCMCpd_var2 = as.data.frame(summary(pd_mod_2)$Gcovariances)
 
-
-PDglmmtmb = glmmTMB(pd.obs ~ GUT+ UNDERSTORY_PROP+ GS+ log(BM_KG)+ (1|MSW93_Binomial)+(1|Period), data=PDMCMC2)
-summary(PDglmmtmb)
-
-# Save values
-TMBpd= as.data.frame(summary(PDglmmtmb)$coefficients$cond)
-TMBpd_var = as.data.frame(unlist(summary(PDglmmtmb)$varcor$cond))
-
-pd_em = as.data.frame(emmeans(PDglmmtmb, ~ GUT, type="response"))
+pd_em = PDMCMC2 %>% 
+  group_by(Species, GUT) %>% 
+  summarize_at(vars(pd.obs), funs(mean(., na.rm=T))) %>% 
+  group_by(GUT) %>% 
+  summarize_at(vars(pd.obs), funs(mean, sd, n())) %>% 
+  mutate(se=sd/sqrt(n))
 
 ###
 pd_sp = PDMCMC2 %>% 
   ggplot(aes(x=GUT, y=pd.obs))+
   geom_boxplot(aes(col=Species), position=position_dodge(0.8), alpha=0.2)+
-  geom_errorbar(data=pd_em, aes(x=GUT, y=emmean, ymin=lower.CL, ymax=upper.CL), size=1)+
-  geom_point(data=pd_em, aes(x=GUT, y=emmean), size=2)+
+  geom_errorbar(data=pd_em, aes(x=GUT, y=mean, ymin=mean-1.96*se, ymax=mean+1.96*se), size=1)+
+  geom_point(data=pd_em, aes(x=GUT, y=mean), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
   theme(panel.grid.major.y = element_blank(),
@@ -326,77 +407,76 @@ ggsave(here(paste("plots/4_pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspp
 
 
 
+##### New plot
+# combine datasets using
+PDMCMC2
+head(sp_sum)
+plot_data = PDMCMC2 %>% 
+  group_by(Species,GUT) %>% 
+  summarize_at(vars(pd.obs, pd.obs.z), funs(mean)) %>% 
+  ungroup() %>% 
+  left_join(sp_sum) %>% 
+  dplyr::select(MSW93_Binomial, Species, GUT, Prevalence, Richness, pd.obs, pd.obs.z)
+
+# manually add cattle data
+# 0.02
+plot_data=rbind(plot_data,data.frame(MSW93_Binomial="Bos_taurus",
+           Species="Cattle",
+           GUT="FG",
+           Prevalence=0.57,
+           Richness=4.71,
+           pd.obs=0.39,
+           pd.obs.z=-0.42))
+# 0.002
+plot_data=rbind(plot_data,data.frame(MSW93_Binomial="Bos_taurus",
+                                     Species="Cattle",
+                                     GUT="FG",
+                                     Prevalence=0.57,
+                                     Richness=11.7,
+                                     pd.obs=1.00,
+                                     pd.obs.z=-0.43))
+
+p = ggtree(tree)
+p2 <- p %<+%
+  plot_data +
+  geom_tiplab(aes(color=GUT), size=2)+
+  scale_color_manual(values=c("aquamarine4", "deepskyblue4"))
+
+pp=p+geom_facet(panel="Prevalence",
+             data=plot_data,
+             geom=geom_tile,
+             mapping=aes(x=1, fill=Prevalence))+
+  scale_fill_gradient(low="black",high="#F2300F")
+pr=p+geom_facet(panel="Richness",
+             data=plot_data,
+             geom=geom_tile,
+             mapping=aes(x=1, fill=Richness))+
+  scale_fill_gradient(low="black",high="#F2AD00")
+ppd=p+geom_facet(panel="PD",
+             data=plot_data,
+             geom=geom_tile,
+             mapping=aes(x=1, fill=pd.obs))+
+  scale_fill_gradient(low="black", high="#81A88D")
+ppdz=p+geom_facet(panel="sesPD",
+                  data=plot_data,
+                  geom=geom_tile,
+                  mapping=aes(x=1, fill=pd.obs.z))+
+  scale_fill_gradient(low="black", high="#46ACC8")
+
+all = gridExtra::grid.arrange(pp, pr, ppd, ppdz, ncol=4)
+
+ggsave("plots/fig1_tree0.02.png",p2, height=8, width=4)
+ggsave("plots/fig1_metrics0.02.png",all, height=8, width=10)
+
+ggsave("plots/fig1_tree0.002.png",p2, height=8, width=4)
+ggsave("plots/fig1_metrics0.002.png",all, height=8, width=10)
+
+
+#############################################################
+
 # write out information
 result_2_3 = rbind(result_1, result_2)
 write.table(result_2_3, here(paste("docs/4_anova_tests_pd",threshold_used,".txt", sep="")),sep="\t")
-
-MCMCpd$predictor = row.names(MCMCpd)
-MCMCpdz$predictor = row.names(MCMCpdz)
-TMBpd$predictor = row.names(TMBpd)
-TMBpdz$predictor = row.names(TMBpdz)
-MCMCpd_var$predictor = row.names(MCMCpd_var)
-MCMCpdz_var$predictor = row.names(MCMCpdz_var)
-
-MCMCmods = rbind(MCMCpd, MCMCpdz)
-MCMCmods$Metric = c(rep("PD",5), rep("sesPD", 5))
-MCMCvars = rbind(MCMCpd_var, MCMCpdz_var)
-MCMCvars$Metric = c(rep("PD",3), rep("sesPD", 3))
-TMBmods = rbind(TMBpd, TMBpdz)
-TMBmods$Metric = c(rep("PD",5), rep("sesPD", 5))
-TMBvars = cbind(TMBpd_var, TMBpdz_var)
-names(TMBvars) = c("PD","sesPD")
-
-## Models MCMC
-MCMCmods2 = MCMCmods %>% 
-  mutate_at(vars(post.mean:pMCMC), funs(round(.,3))) %>% 
-  mutate(CI = paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
-  mutate(M = paste(post.mean, " (",pMCMC, ")", sep="")) %>% 
-  pivot_longer(cols=c(M,CI), names_to="Measure", values_to="Value") %>% 
-  dplyr::select(predictor, Value, eff.samp, Metric)
-
-## Variance
-MCMCvars2 = MCMCvars %>% 
-  mutate_at(vars(post.mean:eff.samp), funs(round(.,3))) %>% 
-  mutate(CI=paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
-  mutate_at(vars(post.mean), funs(as.character(.))) %>% 
-  pivot_longer(cols=c(post.mean, CI), names_to="Measure", values_to="Value") %>% 
-  dplyr::select(predictor,Value, eff.samp, Metric)
-MCMCvars2
-
-## TMB
-TMBmods2 = TMBmods %>% 
-  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,3))) %>% 
-  mutate(M_SE=paste(Estimate, `Std. Error`, sep=", ")) %>% 
-  mutate(Z_p = paste(`z value`," (",`Pr(>|z|)`,")",sep="")) %>% 
-  pivot_longer(cols=c(M_SE,Z_p), names_to="Measure", values_to="Value") %>% 
-  dplyr::select(predictor, Value, Metric)
-
-# Combine into table
-
-allMods = cbind(MCMCmods2[1:10, ], TMBmods2[1:10,], MCMCmods2[11:20,], TMBmods2[11:20,])
-# check all variables in correct order
-names(allMods)=c("Predictor", "MCMC PD", "eff.samp.prev", "Metric", "P2", "TMB PD", "Metric", "P3",
-                 "MCMC sesPD", "eff.samp.rich", "Metric", "P4", "TMB sesPD", "Metric")
-allMods = allMods %>% 
-  select(Predictor, `MCMC PD`, eff.samp.prev, `TMB PD`, `MCMC sesPD`, eff.samp.rich,`TMB sesPD`)
-
-MCMCvars2
-TMBvars
-
-MCMCvars2 = data.frame(MCMCvars2[1:6,c(1:3)], TMB_Prev = c("","","",TMBvars[1,1],"",TMBvars[2,1]),
-                       MCMCvars2[7:12,2:3], TMB_Rich =  c("","","",TMBvars[1,1],"",TMBvars[2,1]))
-MCMCvars2 = MCMCvars2 %>% 
-  mutate_at(vars(TMB_Prev, TMB_Rich), funs(round(as.numeric(.),3))) %>% 
-  mutate_at(vars(TMB_Prev, TMB_Rich), funs(ifelse(is.na(.), "",.)))
-names(MCMCvars2) = c("Predictor", "MCMC PD", "eff.samp.prev", "TMB PD", "MCMC sesPD", "eff.samp.rich",
-                     "TMB sesPD")            
-
-full_results_table = rbind(allMods, MCMCvars2)
-
-write.csv(full_results_table, here(paste("docs/4_pd_sesPD_model_results",threshold_used,".csv", sep="")), row.names = F)
-
-lambdas = as.data.frame(rbind(lambda_pd, lambda_pd_z))
-write.table(lambdas, here(paste("docs/4_lambda_pds",threshold_used,".txt",sep="")),sep="\t")
 
 
 ### species summary

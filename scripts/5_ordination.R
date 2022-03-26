@@ -121,10 +121,11 @@ ggplot(elbow_ord, aes(x=dimensions, y=stress))+
   geom_line()
 
 # use three 
-ordMRC = metaMDS(dplyr::select(data_table, mOTU_1:endmotu), k=3, distance="bray", binary=F, autotransform = F)
-gof = goodness(ordMRC2)
-mean(gof)
-plot(ordMRC);points(ordMRC, display="sites",cex=gof*100)
+ordMRC = metaMDS(dplyr::select(data_table, mOTU_1:endmotu),
+                 k=3, distance="bray",
+                 trymax=50,
+                 binary=F, autotransform = F)
+plot(ordMRC);points(ordMRC, display="sites")
 
 # create data tables to use for ggplot
 mdsplot = data.frame(x1 = ordMRC$points[,1], x2=ordMRC$points[,2], x3=ordMRC$points[,3], species = data_table$Species, period=data_table$Period, sample=data_table$Sample)
@@ -178,7 +179,7 @@ MRCord2+facet_wrap(~species)
 mOTU_NMDS = gridExtra::grid.arrange(MRCord1,MRCord2,ncol=2, widths=c(1,1.3))
 
 #ggsave(here(paste("plots/5_mOTU_NMDS",threshold_used,".pdf", sep="")), mOTU_NMDS, width=12, height=5, dpi=300, device="pdf")
-ggsave(here(paste("plots/5_mOTU_NMDS",threshold_used,".png", sep="")), mOTU_NMDS, width=12, height=5, dpi=300, device="png")
+#ggsave(here(paste("plots/5_mOTU_NMDS",threshold_used,".png", sep="")), mOTU_NMDS, width=12, height=5, dpi=300, device="png")
 
 
 
@@ -208,8 +209,6 @@ MRCord = ggplot(unif_mdsplot, aes(x=x1, y=x2))+
   annotate(geom="text", x=min(unif_mdsplot$x1)+abs(0.15*min(unif_mdsplot$x1)), y=min(unif_mdsplot$x2), label=paste("Stress = ",round(unif_ordMRC$stress,2)))
 
 MRCord
-
-
 
 
 #### Test Variation Explained by Species ####
@@ -316,7 +315,7 @@ MRCord_agg_unif
 
 sp_ords = gridExtra::grid.arrange(MRCord_agg_motu, MRCord_agg_unif, widths=c(1.75,3), ncol=2)
 
-ggsave(here(paste("plots/5_sp_ords",threshold_used,".pdf",sep="")), sp_ords, width=15, height=5, dpi=300, device="pdf")
+#ggsave(here(paste("plots/5_sp_ords",threshold_used,".pdf",sep="")), sp_ords, width=15, height=5, dpi=300, device="pdf")
 
 
 #### Test Variation Explained by Species Traits ####
@@ -428,6 +427,7 @@ rownames(gllink)[c(5,6,9,16)]=c("Equus_africanus","Tragelaphus_oryx","Nanger_gra
 gllink2 = as.data.frame(gllink[,-c(1,dim(gllink)[2])])
 rownames(gllink2) = rownames(gllink)
 
+# Uncomment to run this section (it may take a while to run)
 # # Prepare and run analysis
 # D = prepare_paco_data(H=htree, P=ptree, HP=gllink2)
 # 

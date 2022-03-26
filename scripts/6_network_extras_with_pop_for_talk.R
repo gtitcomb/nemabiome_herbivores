@@ -31,10 +31,10 @@ hosts = read.csv(here("data/host_metadata.csv"))
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
 # decide which dataframe
-treeNJ = treeNJ2
-data_table = table_2
-tipdata = tipdata2
-threshold_used = "0.02"
+treeNJ = treeNJ1
+data_table = table_1
+tipdata = tipdata1
+threshold_used = "0.002"
 
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 endmotu = names(data_table)[dim(data_table)[2]-27]
@@ -71,12 +71,11 @@ find_threshold = function(avg_otu_table, vector_to_try){
   return(store)
 }
 
-find_threshold(avgRRA, seq(from = 0, to = 0.1, by=0.01)) %>% 
+find_threshold(avgRRA, seq(from = 0, to = 0.03, by=0.002)) %>% 
   ggplot(aes(x=threshold, y=n_links))+
-  geom_point()+
   geom_line()+
-  scale_y_continuous(limits=c(0,300))+
-  geom_vline(xintercept=c(0.020), linetype="dotted", col="red", size=1)+
+  scale_y_continuous(limits=c(0,1100))+
+  geom_vline(xintercept=c(0.001,0.020), linetype="dotted", col="red", size=1)+
   theme_bw()+
   labs(x="Average RRA Threshold", y="Number of Edges")
 
@@ -152,10 +151,10 @@ psite_distribution = bin_avgRRA %>%
   labs(x="Number of Host Species", y="mOTU ID")
 psite_distribution
 
-#ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")),psite_distribution, width=3, height=12, dpi=300, device="png")
+ggsave(here(paste("plots/6_psite_distribution",threshold_used,".png", sep="")),psite_distribution, width=3, height=12, dpi=300, device="png")
 
 ### Test aggregation ###
-# which theoretical distribution has best fit?
+
 descdist(bin_avgRRA$N_Hosts)
 fit.lnorm = fitdist(bin_avgRRA$N_Hosts, "lnorm", discrete = T)
 plot(fit.lnorm)
@@ -180,44 +179,10 @@ distribution_table = data.frame(Distribution = c("Log-Normal", "Exponential", "N
 plot(fit.lnorm); plot(fit.exp); plot(fit.nb); plot(fit.pois)
 result_2 = distribution_table
 
-#write_delim(result_2, here(paste("docs/6_distribution_fit",threshold_used,".txt",sep="")))
-
-### New aggregation method ###
-
-head(avgRRA2)
-head(hosts)
-names(avgRRA2)
-t_RRA = hosts %>% 
-  group_by(Species, MSW93_Binomial) %>% 
-  summarize(n=n()) %>% 
-  ungroup() %>% 
-  left_join(avgRRA2) %>% 
-  filter(is.na(mOTU_1)==F) %>%
-  pivot_longer(mOTU_1:mOTU_59, names_to="mOTU", values_to="avgRRA") %>% 
-  filter(avgRRA>0) %>% 
-  mutate(avgRRA = 1) %>% 
-  pivot_wider(names_from=MSW93_Binomial, values_from="avgRRA", -c(n,Species),
-              values_fill = 0)
-t_RRA = t_RRA[which(specnumber(t_RRA[,-1])>1),]
-
-
-## core and satellite ##
-head(data_table)
-tall = data_table %>% 
-  mutate_at(vars(mOTU_1:mOTU_94), funs(ifelse(.>0,1,0))) %>% 
-  group_by(MSW93_Binomial) %>% 
-  summarize_at(vars(mOTU_1:mOTU_94), funs(sum))
-
-tall %>% 
-  pivot_longer(cols=mOTU_1:mOTU_94) %>% 
-  filter(value>0) %>% 
-  ggplot(aes(x=value))+
-  geom_histogram(aes(fill=MSW93_Binomial), binwidth = 3)+
-  facet_wrap(~MSW93_Binomial, scales="free")+
-  guides(fill="none")
-
+write_delim(result_2, here(paste("docs/6_distribution_fit",threshold_used,".txt",sep="")))
 
 ### Create Network ###
+
 
 # need to put all in one column
 mat_1_long = avgRRA2 %>% 
@@ -287,14 +252,21 @@ E(g)$weight = E(g)$RRA*10
 mat_2_long$Species = as.factor(mat_2_long$Species)
 plot_names = V(g)$name %in% c(levels(mat_2_long$Species), mat_2_long$Taxa2[which(mat_2_long$RRA>0.1)])
 
+# set vertex size based on population
+V(g)$size1 = c(1089.1,7425,1273,4073,23,890,1936,7,7,492,4470,14309,871,9192,282,181500,
+               rep(1,66))
+V(g)$size2 = c(499,845,3421,3812,4094,4142,1416,7,7,2138,363,28129,945,6117,834,194736,
+               rep(1,66))
 
+  
 # Save Network Image
 
 pdf(here(paste("plots/6_bipartite_network",threshold_used,".pdf",sep="")))
 set.seed(123); plot(g,
      vertex.label = ifelse(plot_names, V(g)$name, ""),
      vertex.label.cex = 0.8,
-     vertex.size=ifelse(V(g)$type,1,7),
+     #vertex.size=ifelse(V(g)$type,1,7),
+     vertex.size=log(V(g)$size2),
      vertex.label.color = ifelse(V(g)$type,"gray60","black"),
      edge.width=E(g)$weight,
      layout=layout_with_fr)
@@ -372,30 +344,7 @@ phylodists = cophenetic(tree)
 
 # calculate average distance from all others
 totaldists = as.data.frame(rowSums(phylodists)/18) # this is Average pairwise distance
-totaldists2 = evol.distinct(tree, type="fair.proportion")
-# correlate with equal splits?
-td3 = evol.distinct(tree, type="equal.splits")
-cor.test(totaldists2$w, td3$w)
 totaldists$sciname = rownames(totaldists)
-totaldists2$sciname = totaldists2$Species
-
-
-cp = cov(phylodists) %>% 
-  as.data.frame() %>% 
-  mutate(sp1 = row.names(.)) %>% 
-  pivot_longer(.,Equus_africanus:Loxodonta_africana) %>% 
-  rename("sp2"=name)
-pp = phylodists %>% 
-  as.data.frame() %>% 
-  mutate(sp1 = row.names(.)) %>% 
-  pivot_longer(.,Equus_africanus:Loxodonta_africana) %>% 
-  rename("sp2"=name, "pdis"=value)
-left_join(cp, pp) %>% 
-  ggplot(., aes(x=value, y=pdis))+
-  geom_point()
-
-evol.distinct(tree);totaldists
-cor.test(evol.distinct(tree)$w,totaldists$`rowSums(phylodists)/18`,method="pearson")
 
 # correct sci name
 species_link = data.frame(sciname = c("Loxodonta_africana",
@@ -421,12 +370,10 @@ species_link = data.frame(sciname = c("Loxodonta_africana",
 
 
 
-netdata = left_join(netdata,species_link) %>%
-  left_join(.,totaldists) %>% 
-  left_join(.,totaldists2)
+netdata = left_join(netdata,species_link) %>% left_join(.,totaldists)
 names(netdata)[7]="Distance"
 
-ggplot(netdata, aes(x=w, y=e))+
+ggplot(netdata, aes(x=log(Distance), y=e))+
   geom_point(size=3,aes(col=species))+
   scale_color_manual(values=animal_colors[-14])+
   geom_smooth(method="lm")+
@@ -436,17 +383,17 @@ ggplot(netdata, aes(x=w, y=e))+
 
 
 netdata %>% 
-  dplyr::select(species, c:e, w) %>% 
+  dplyr::select(species, c:e, Distance) %>% 
   pivot_longer(c:e, names_to="metric", values_to="value") %>%
   mutate(metric=recode(metric, b="Betweenness", c="Closeness", d="Degree", e="Eigenvector")) %>% 
-  ggplot(aes(x=w, y=value))+
+  ggplot(aes(x=log(Distance), y=value))+
   geom_point(size=3,aes(col=species))+
   scale_color_manual(values=animal_colors[-14])+ 
   geom_smooth(method="lm", se=F)+
   guides(col=F)+
   ggrepel::geom_text_repel(aes(label=species))+
   facet_wrap(~metric, scales="free_y")+
-  labs(x="Evolutionary Distinctiveness", y="Value")+
+  labs(x="log(Mean Phylogenetic Distance)", y="Value")+
   theme_bw()
 
 
@@ -463,7 +410,7 @@ netlong3 = left_join(netlong2, dplyr::select(netdata_all,
 
 measuredict = c(b="Betweenness",c="Closeness", d="Degree", e="Eigenvector")
 
-nodedata2 = ggplot(netlong3, aes(x=w, y=Value))+
+nodedata2 = ggplot(netlong3, aes(x=Distance, y=Value))+
   theme_bw(base_size=14)+
   geom_point(aes(col=MSW93_Family, shape=GUT),
              alpha=0.6,
@@ -492,15 +439,62 @@ E(hostgraph)$color = "lightgray"
 V(hostgraph)$frame.color =  "white"
 V(hostgraph)$label.dist = 0
 
+hg2 = delete.edges(hostgraph, which(E(hostgraph)$weight<0.01))
+hg2 = delete.vertices(hg2, "Hippo")
 
-pdf(here(paste("plots/6_hostgraph",threshold_used,".pdf",sep="")), width=8, height=8)
-set.seed(123); plot(hostgraph,
+pdf(here(paste("plots/6_hostgraphc",threshold_used,".pdf",sep="")), width=8, height=8)
+set.seed(123); plot(hg2,
      vertex.label.cex = 1.5,
-     vertex.size=10,
+     vertex.size=15,
      vertex.label.color = "gray30",
-     edge.width=E(hostgraph)$weight*100)
+     #edge.width=E(hostgraph)$weight*100,
+     layout=layout_nicely)
 dev.off()
 
+
+### showing population
+# remove hippo
+hostgraph2 = delete.vertices(hostgraph, "Hippo")
+# add pop change
+popchange = c(-54,-88,169,-6.4,18000,365,-27,0,335,-92,97,8,-34,196,7)
+V(hg2)$popchange = c(-54,-88,169,-6.4,18000,365,-27,0,335,-92,97,8,-34,196,7)
+popsize_2010 = c(499,845,3421,3812,4094,4142,1416,7,2138,363,28129,945,6117,834,194736)
+popsize_1980 = c(1089.1,7425,1273,4073,23,890,1936,7,492,4470,14309,871,9192,282,181500)
+
+
+# if more than 50% drop = BLUE
+# if 1-50% drop = PURPLY BLUE
+# if 100-200% increase = PURPLY RED
+# if >200% increase RED
+popchange_col = ifelse(popchange < -50, "#3600C8",
+                       ifelse(popchange < -1, "#6D0091",
+                              ifelse(popchange < 100, "#91006D",
+                                     ifelse(popchange < 200, "#B60048", "#FF0000"))))
+
+pdf(here(paste("plots/6_hostgraph_pop_2010b",threshold_used,".pdf",sep="")), width=8, height=8)
+set.seed(123);plot(hg2,
+     vertex.label.cex = 1,
+     vertex.size=sqrt(popsize_2010)/pi,
+     vertex.label.color = "gray30",
+     vertex.color=popchange_col)
+     #edge.width=E(hg2)$weight*100)
+dev.off()
+
+
+# delete domestic
+edgelist = as_edgelist(hostgraph2)
+
+remove = unique(c(grep("Cattle",edgelist[,1]),grep("Camel",edgelist[,1]),grep("Donkey",edgelist[,1])))
+remove2 = unique(c(grep("Cattle",edgelist[,2]),grep("Camel",edgelist[,2]),grep("Donkey",edgelist[,2])))
+remove3 = unique(c(remove,remove2))
+hostgraph3 = delete.edges(hostgraph2, remove3)
+
+set.seed(123);plot(hostgraph3,
+                   vertex.label.cex = 1.5,
+                   vertex.size=sqrt(popsize_2010)/pi,
+                   vertex.label.color = "gray30",
+                   vertex.color=popchange_col,
+                   edge.width=E(hostgraph2)$weight*100)
 
 # create models with host information
 
@@ -525,7 +519,7 @@ correlations = data.frame(S = c(dcor$statistic,ecor$statistic,bcor$statistic,cco
 result_1 = correlations %>% 
   pivot_longer(S:P, names_to="Correlation Details", values_to="value") %>% 
   pivot_wider(names_from=test, values_from=value)
-result_1
+
 write_delim(result_1, here(paste("docs/6_centrality_cors",threshold_used, ".txt", sep="")))
 
 ### Models ###
@@ -534,8 +528,8 @@ write_delim(result_1, here(paste("docs/6_centrality_cors",threshold_used, ".txt"
 comp.data$data$c = comp.data$data$c * 100
 
 # don't use log(BM) and log(RS) at the same time
-c_mod = pgls(c~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS + w, data = comp.data, lambda=1, kappa=1, delta=1)
-dredge(c_mod)[1:5,]
+c_mod = pgls(c~ GUT + UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data = comp.data, lambda=1, kappa=1, delta=1)
+dredge(c_mod)
 c_mod2 = pgls(c~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
 summary(c_mod2)
 cmodval = as.data.frame(summary(c_mod)$coefficients %>% round(.,3))
@@ -546,8 +540,8 @@ cmodval2$Predictor = row.names(cmodval2)
 cmodval2$Metric = "Closeness"
 
 # eigenvector
-e_mod = pgls(e ~ GUT + UNDERSTORY_SP_MEAN + log(BM_KG) + GS + w, data=comp.data, lambda=1, kappa=1, delta=1)
-dredge(e_mod)[1:5,]
+e_mod = pgls(e ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data=comp.data, lambda=1, kappa=1, delta=1)
+dredge(e_mod)
 e_mod2 = pgls(e ~ GUT, data=comp.data, lambda=1, kappa=1, delta=1)
 emodval = as.data.frame(summary(e_mod)$coefficients %>% round(.,3))
 emodval$Predictor = row.names(emodval)
@@ -557,8 +551,8 @@ emodval2$Predictor = row.names(emodval2)
 emodval2$Metric = "Eigenvector"
 
 # betweenness
-b_mod = pgls(b ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) +GS +w, data=comp.data, lambda=1, kappa=1, delta=1)
-dredge(b_mod)[1:5,]
+b_mod = pgls(b ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) +GS, data=comp.data, lambda=1, kappa=1, delta=1)
+dredge(b_mod)
 b_mod2 = pgls(b ~ 1, data=comp.data, lambda=1, kappa=1, delta=1)
 bmodval = as.data.frame(summary(b_mod)$coefficients %>% round(.,3))
 bmodval$Predictor = row.names(bmodval)
@@ -570,15 +564,13 @@ summary(b_mod2)
 bmodval2$Metric = "Betweenness"
 
 # degree -- not relevant for 0.002 dataset
-d_mod = pgls(d ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS +w, data=comp.data, lambda=1,kappa=1,delta=1)
+d_mod = pgls(d ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS, data=comp.data, lambda=1,kappa=1,delta=1)
 dredge(d_mod)
-# Understory and Gut have perhaps some evidence, but not substantially 
-# more than the intercept
 d_mod2 = pgls(d ~ 1, data=comp.data, lambda=1,kappa=1,delta=1)
 dmodval = as.data.frame(summary(d_mod)$coefficients %>% round(.,3))
 dmodval$Predictor = row.names(dmodval)
 dmodval$Metric = "Degree"
-summary(d_mod2)
+summary(d_mod)
 dmodval2 = as.data.frame(summary(d_mod2)$coefficients %>% round(.,3))
 dmodval2$Predictor = row.names(dmodval2)
 dmodval2$Metric = "Degree"
@@ -588,10 +580,32 @@ summary(d_mod2)
 network_table_vals = as.data.frame(rbind(dmodval, emodval, bmodval, cmodval))
 network_table_vals2 = as.data.frame(rbind(dmodval2, emodval2, bmodval2, cmodval2))
 
+network_table_vals = network_table_vals %>% 
+  mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,3))) %>% 
+  mutate(M = paste(Estimate, " +/- ", `Std. Error`), V = paste(`t value`, " (", `Pr(>|t|)`, ")", sep="")) %>% 
+  dplyr::select(Metric, Predictor, M, V) %>% 
+  pivot_longer(M:V, names_to="Measure", values_to = "Value") %>% 
+  dplyr::select(Metric, Predictor, Value)
+network_table_vals
+
+network_table_vals2 = network_table_vals2 %>% 
+  mutate_at(vars(Estimate:`Pr(>|t|)`), funs(round(.,3))) %>% 
+  mutate(M = paste(Estimate, " +/- ", `Std. Error`), V = paste(`t value`, " (", `Pr(>|t|)`, ")", sep="")) %>% 
+  dplyr::select(Metric, Predictor, M, V) %>% 
+  pivot_longer(M:V, names_to="Measure", values_to = "Value") %>% 
+  dplyr::select(Metric, Predictor, Value)
+network_table_vals2
+
 # export table
 write.csv(network_table_vals, here(paste("docs/6_network_table_vals",threshold_used,".csv",sep="")), row.names = F)
 write.csv(network_table_vals2, here(paste("docs/6_network_table_vals2_",threshold_used,".csv",sep="")), row.names = F)
 
+### Cor between log(BM) and log(RS)
+m1 = lm(c ~ GS+GUT+log(BM_KG)+log(RS_KM2), data=comp.data$data)
+summary(m1)
+car::vif(m1)
+plot(log(comp.data$data$BM_KG) ~ log(comp.data$data$RS_KM2))
+cor.test(comp.data$data$BM_KG, comp.data$data$RS_KM2)
 
 #####################################################################
 

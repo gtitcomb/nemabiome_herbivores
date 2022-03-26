@@ -3,7 +3,7 @@
 "Ct <35 N"	356
 "N selected from qPCR"	310
 "N metabarcoded"	321
-"Depth"	17902
+"Depth"	15868
 "N Dropped"	40
 "N pos"	281
 "N mOTU"	80

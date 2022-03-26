@@ -67,9 +67,9 @@ cor.test(tab1$richness, tab2$richness)
 ##### Dataset-specific ############# 
 
 # decide which data frame
-tab = tab1
+tab = tab2
 # type in the threshold as a character to use for saving plots correctly
-threshold_used = "0.002" 
+threshold_used = "0.02" 
 
 tab = tab %>% 
   filter(Species !="Hybrid zebra") %>% 
@@ -208,14 +208,6 @@ prev_rich_graph = gridExtra::grid.arrange(prevgraph, richgraph, ncol=2)
 ggsave(here(paste("plots/2_prevalence_richness_",threshold_used,".png", sep="")), prev_rich_graph, width=10, height=5, dpi=300, device="png")
 
 
-### qPCR value
-head(tab)
-ggplot(tab, aes(x=reorder(Species,rd_2_qpcr_mean_ct), y=rd_2_qpcr_mean_ct))+
-  geom_boxplot(aes(fill=Species))+
-  scale_fill_manual(values=animal_colors)+
-  guides(fill="none")+
-  theme_bw(base_size = 14)+
-  theme(axis.text.x=element_text(angle=90, hjust=1, vjust=0))
 
 #### How much variation is explained by species?
 
@@ -224,19 +216,13 @@ ggplot(tab, aes(x=reorder(Species,rd_2_qpcr_mean_ct), y=rd_2_qpcr_mean_ct))+
 MP_prev = tab %>% 
   mutate_at(vars(rd_2_qpcr_present), funs(ifelse(.=="Y",1,0)))
 
-# fit logistic with species
 MPprev_mod = glmmTMB(rd_2_qpcr_present ~ Species, data=MP_prev, family="binomial")
-# residuals
-testResiduals(simulateResiduals(MPprev_mod))
-
-# assess pct variation
 temp = car::Anova(MPprev_mod)
 as.data.frame(performance::r2_tjur(MPprev_mod))
 
-# save results and sample size
 result_2 = cbind(as.data.frame(temp), data.frame(R2 = performance::r2_tjur(MPprev_mod)))
-dim(MP_prev)
 
+dim(MP_prev)
 ## Richness ################
 # fit model
 dim(tab_present)
@@ -271,29 +257,14 @@ tree$tip.label[which(tree$tip.label=="Tragelaphus_oryx")]="Taurotragus_oryx"
 tree$tip.label[which(tree$tip.label=="Equus_africanus")]="Equus_asinus"
 tree$tip.label[which(tree$tip.label=="Equus_quagga")]="Equus_burchellii"
 
-# remove unused tips
+#remove unused tips
 tree = drop.tip(tree, c("Tragelaphus_scriptus","Kobus_ellipsiprymnus"))
 
-# format phylo for use with MCMCglmm
-inv.phylo = inverseA(tree, nodes="TIPS", scale=T)
+inv.phylo = inverseA(tree, nodes="TIPS", scale=T) # decide all or tips
 
-# set prior for poisson: weak inverse Wishart for residual variance and G structure
+# set prior for poisson
+prior_pois = list(G=list(G1=list(V=1,nu=0.02),G2=list(V=1,nu=0.02), G3=list(V=1,nu=0.02)), R=list(V=1,nu=0.02))
 
-# Note: parameter expanded priors for G structure (as in Hadfield notes)
-# gave unacceptable autocorrelation values for phylogeny and species
-
-# with phylogeny
-## inverse wishart
-prior_pois = list(G=list(G1=list(V=1,nu=0.002),
-                         G2=list(V=1,nu=0.002),
-                         G3=list(V=1,nu=0.002)),
-                  R=list(V=1,nu=0.002))
-
-# without phylogeny
-## inverse wishart
-prior_pois2 = list(G=list(G1=list(V=1,nu=0.002),
-                         G2=list(V=1,nu=0.002)),
-                  R=list(V=1,nu=0.002))
 
 #### Richness -MCMCglmm #####
 
@@ -317,13 +288,16 @@ MPrichinfoMCMC %>%
   ggplot(aes(x=log(BM_KG), y=log(RS_KM2)))+
   geom_point()+
   geom_smooth(method="lm", se=F);
+MPrichinfoMCMC %>% 
+  ggplot(aes(x=log(BM_KG), y=GS))+
+  geom_point()+
+  geom_smooth(method="lm", se=F)
 cor.test(MPrichinfoMCMC$BM_KG, MPrichinfoMCMC$RS_KM2, method="spearman")
-# Body mass and range size are closely related; will exclude range size
 
-################
+# Body mass and range size are closely related; will want to fit separately
+
 # Fit model
 
-# with phylogeny
 set.seed(123)
 model_rich = MCMCglmm(richness ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP,
                       random= ~ phylo + MSW93_Binomial+Period,
@@ -334,71 +308,66 @@ model_rich = MCMCglmm(richness ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP,
                       nitt=500000, burnin=10000, thin=250,
                       verbose=F, pl=T)
 
-# Visually inspect mixing and posterior distributions
-plot(model_rich)
 
-# plot autocorrelation
-plot.acfs = function(x) {
-  n <- dim(x)[2]
-  par(mfrow=c(ceiling(n/2),2), mar=c(3,2,3,0))
-  for (i in 1:n) {
-    acf(x[,i], lag.max=100, main=colnames(x)[i])
-    grid()
-  }
-}
+# check autocorrelation
+autocorr(model_rich$Sol)
+autocorr(model_rich$VCV) 
 
-plot.acfs(model_rich$VCV)
-plot.acfs(model_rich$Sol)
-
-# view results
 summary(model_rich)
 
 
-###################
-# without phylogeny
-set.seed(123)
-model_rich2 = MCMCglmm(richness ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP,
-                       random= ~ MSW93_Binomial+Period,
-                       family = "poisson",
-                       prior=prior_pois2,
-                       data=MPrichinfoMCMC,
-                       nitt=500000, burnin=10000, thin=250,
-                       verbose=F, pl=T)
+HPDinterval(mcmc(model_rich$Sol)) %>%
+  as.data.frame() %>%
+  mutate(predictor=rownames(.)) %>%
+  filter(predictor != "(Intercept)") %>%
+  ggplot(aes(x=predictor))+
+  geom_errorbar(aes(ymin=lower, ymax=upper))+
+  geom_hline(yintercept=0)
 
-# Visually inspect mixing and posterior
-plot(model_rich2)
 
-# Check autocorrelations
-plot.acfs(model_rich2$VCV)
-plot.acfs(model_rich2$Sol)
-
-# view results
-summary(model_rich2)
-
-# store lambda
 lambda_r = model_rich$VCV[,'phylo']/
   (model_rich$VCV[,'phylo']+model_rich$VCV[,'units']+model_rich$VCV[,'MSW93_Binomial']+model_rich$VCV[,'Period'])
+plot(density(lambda_r))
 posterior.mode(lambda_r)
-mean(lambda_r)
+HPDinterval(lambda_r)
 
-# store results
+# Save results
 MCMCrichness = as.data.frame(summary(model_rich)$solutions)
 MCMCrichness_var = as.data.frame(summary(model_rich)$Gcovariances)
 lambda_rich = c(mean = mean(lambda_r), mode = posterior.mode(lambda_r))
 
-MCMCrichness2 = as.data.frame(summary(model_rich2)$solutions)
-MCMCrichness_var2 = as.data.frame(summary(model_rich2)$Gcovariances)
+## Richness no phylo ##
+prior_pois2 = list(G=list(G1=list(V=1,nu=0.02),
+                          G2=list(V=1,nu=0.02)),
+                   R=list(V=1,nu=0.02))
 
+set.seed(123)
+model_rich2 = MCMCglmm(richness ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP,
+                      random= ~ MSW93_Binomial+Period,
+                      family = "poisson",
+                      ginverse=list(phylo=inv.phylo$Ainv),
+                      prior=prior_pois2,
+                      data=MPrichinfoMCMC,
+                      nitt=500000, burnin=10000, thin=250,
+                      verbose=F, pl=T)
 
-### Compare to glmmTMB ###
-# fit model
+summary(model_rich2)
+
+## Richness - glmmTMB #####
+# Full model
 rmod = glmmTMB(richness ~  log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP+ (1|Period)+(1|MSW93_Binomial), family="poisson", data=MPrichinfoMCMC)
 summary(rmod)
 
+
+# Save values
+TMBrichness = as.data.frame(summary(rmod)$coefficients$cond)
+TMBrichness_var = as.data.frame(unlist(summary(rmod)$varcor$cond))
+
+
 drmod = glmmTMB(richness ~ GUT+(1|Period)+(1|MSW93_Binomial), family="poisson", data=MPrichinfoMCMC)
 summary(drmod)
-GUTests = as.data.frame(emmeans(rmod, ~GUT, type="response"))
 
+GUTests = as.data.frame(emmeans(rmod, ~GUT, type="response"))
 
 # Plot
 MPrichinfoMCMC %>% 
@@ -421,29 +390,33 @@ MPrichinfoMCMC %>%
   facet_wrap(~Variable, scales="free_x")+
   labs(y="Parasite mOTU Richness")
 
-GUTests = MPrichinfoMCMC %>% 
-  group_by(Species, GUT) %>% 
-  summarize_at(vars(richness), funs(mean)) %>% 
-  group_by(GUT) %>% 
-  summarize_at(vars(richness), funs(mean, sd, n())) %>% 
-  mutate(se=sd/sqrt(n))
-
 rich_sp_plot = MPrichinfoMCMC %>% 
   ggplot(aes(x=GUT, y=richness))+
   geom_boxplot(aes(col=Species), position=position_dodge(0.8), alpha=0.2)+
-  geom_errorbar(data=GUTests, aes(x=GUT, y=mean, ymin=mean-1.96*se, ymax=mean+1.96*se), size=1)+
-  geom_point(data=GUTests, aes(x=GUT, y=mean), size=2)+
+  geom_errorbar(data=GUTests, aes(x=GUT, y=rate, ymin=lower.CL, ymax=upper.CL), size=1)+
+  geom_point(data=GUTests, aes(x=GUT, y=rate), size=2)+
   scale_color_manual(values=animal_colors[-3])+
   theme_bw(base_size=14)+
-  guides(col="none")+
   theme(panel.grid.major.y = element_blank(),
         panel.grid.minor.y = element_blank(),
         panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank())+
   labs(x="Gut Type", y="Richness")
 
+rich_sp_plot = rich_sp_plot+guides(col="none")
+rich_sp_plot
 
-#### Prevalence MCMCglmm #####
+
+
+#### Prevalence -MCMCglmm #####
+
+# advice from https://r-sig-mixed-models.r-project.narkive.com/I9vUTpvM/r-sig-me-rare-binary-outcome-mcmcglmm-and-priors
+prior_binom = list(R = list(V = 1, fix = 1),
+                   B = list(mu = c(rep(0,6)),
+                            V = diag(6)*(4.3+pi^2/3)),
+                   G = list(G1 =list(V = 1, nu = 0),
+                            G1 =list(V = 1, nu = 0),
+                            G1 =list(V = 1, nu = 0)))
 
 # format data correctly
 MPprevinfoMCMC = as.data.frame(MP_prev)
@@ -455,105 +428,194 @@ dim(MPprevinfoMCMC)
 #exclude cattle
 MPprevinfoMCMC=MPprevinfoMCMC[-which(MPprevinfoMCMC$Species=="Cattle"),]
 
+MPprevinfoMCMC
+
 # use group mean
 MPprevinfoMCMC[which(is.na(MPprevinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_PROP=MPprevinfoMCMC[which(is.na(MPprevinfoMCMC$UNDERSTORY_PROP)),]$UNDERSTORY_SP_MEAN
 dim(MPprevinfoMCMC)
-# 519 - 49 cattle
+# 520 - 49 cattle
+
+
+a = 1000
+prior_binom2 = list(R = list(V = 1, fix = 1),
+                    B = list(mu = c(rep(0,5)),
+                             V = diag(5)*(4.3+pi^2/3)),
+                    G = list(G1 =list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a),
+                             G1 =list(V = diag(1), nu = 1,  alpha.mu = 0, alpha.V = diag(1)*a),
+                             G1 =list(V = diag(1), nu = 1,  alpha.mu = 0, alpha.V = diag(1)*a)))
 
 MPprevinfoMCMC$L_BM_KG = log(MPprevinfoMCMC$BM_KG)
 
-# Binomial priors -- parameter expanded for G component, fixed variance for residual variance
-prior_binom = list(R = list(V = 1, fix = T),
-                   G = list(G1 =list(V = 1, nu = 0.002),
-                            G2 =list(V = 1, nu = 0.002),
-                            G3 =list(V = 1, nu = 0.002)))
+prior_binom1 = list(R = list(V = 0.5, fix = T),
+                    B = list(mu = c(rep(0,5)),
+                             V = gelman.prior(rd_2_qpcr_present ~ L_BM_KG+ GS+ GUT +UNDERSTORY_PROP,
+                                              data=MPprevinfoMCMC, scale=1+pi^2/3)),
+                    G = list(G1 =list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a),
+                             G2 =list(V = diag(1), nu = 1, alpha.mu = 0, alpha.V = diag(1)*a),
+                             G3 =list(V = diag(1), nu = 1,  alpha.mu = 0, alpha.V = diag(1)*a)))
 
-# no phylogeny version:
-prior_binom2 = list(R = list(V = 1, fix = T),
-                   G = list(G1 =list(V = 1, nu = 1, alpha.mu=0, alpha.V=1000),
-                            G2 =list(V = 1, nu = 1, alpha.mu=0, alpha.V=1000))) 
-             
-# Fit full model
 set.seed(123)
-modt_1 = MCMCglmm(fixed = rd_2_qpcr_present ~ L_BM_KG + GS+ GUT +UNDERSTORY_PROP,
-                 random = ~phylo+MSW93_Binomial+Period,
+modt = MCMCglmm(fixed = rd_2_qpcr_present ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP,
+                 random = ~phylo + MSW93_Binomial+Period,
                  ginverse = list(phylo = inv.phylo$Ainv),
                  data = MPprevinfoMCMC,
                  family = "categorical",
-                 prior = prior_binom,
+                 prior = prior_binom1,
                  nitt = 500000, burnin = 10000, thin = 250,
                  verbose = F, pl = T)
+summary(modt)
 
-# plot model
-plot(modt_1)
+priors <- list(B=list(mu=c(0,0,0), 
+                      V=gelman.prior(Cured~Intervention + Duration, data=eelData, scale=sqrt(pi^2/3+1))), 
+               R=list(V=1,fix=1))
 
-# check autocorrelation
-plot.acfs(modt_1$VCV)
-plot.acfs(modt_1$Sol)
+prior_binom2 = list(R = list(V = 1, fix = 1),
+                    B = list(mu = c(rep(0,5)),
+                        V = gelman.prior(rd_2_qpcr_present ~ L_BM_KG + GS + GUT + UNDERSTORY_PROP,
+                            data = MPprevinfoMCMC,
+                            scale = sqrt(1+pi^2/3))),
+                    G = list(G1 =list(V = 1, nu =0.002), #alpha.mu = 0, alpha.V = 100),
+                             G2 =list(V = 1, nu =0.002)))# alpha.mu = 0, alpha.V = 100)))
 
-# view results
-summary(modt_1)
 
-
-# without phylo
 set.seed(123)
-modt_2 = MCMCglmm(fixed = rd_2_qpcr_present ~ L_BM_KG + GS+ GUT +UNDERSTORY_PROP,
+modt4 = MCMCglmm(fixed = rd_2_qpcr_present ~ L_BM_KG + GS + GUT + UNDERSTORY_PROP,
+                random = ~MSW93_Binomial+Period,
+                data = MPprevinfoMCMC,
+                family = "categorical",
+                prior = prior_binom2,
+                nitt = 50000, burnin = 1000, thin = 250,
+                verbose = F, pl = T)
+summary(modt4)
+plot(modt3)
+
+prior_normal = list(G=list(G1=list(V=1,nu=0.02),
+                           G2=list(V=1,nu=0.02)),
+                    R=list(V=1,nu=0.02))
+modtn = MCMCglmm(fixed = rd_2_qpcr_mean_ct ~ L_BM_KG + GS + GUT + UNDERSTORY_PROP,
                  random = ~MSW93_Binomial+Period,
                  data = MPprevinfoMCMC,
-                 family = "categorical",
-                 prior = prior_binom2,
-                 nitt = 500000, burnin = 10000, thin = 250,
+                 family = "gaussian",
+                 prior = prior_normal,
+                 nitt = 50000, burnin = 1000, thin = 250,
                  verbose = F, pl = T)
+summary(modtn)
 
-# plot model
-plot(modt_2)
 
-# check autocorrelation
-plot.acfs(modt_2$VCV)
-plot.acfs(modt_2$Sol)
 
-# view results
-summary(modt_2)
+prior_normal1 = list(G=list(G1=list(V=1,nu=0.02),
+                           G2=list(V=1,nu=0.02),
+                           G3=list(V=1, nu=0.02)),
+                    R=list(V=1,nu=0.02))
+modtnp = MCMCglmm(fixed = rd_2_qpcr_mean_ct ~ L_BM_KG + GS + GUT + UNDERSTORY_PROP,
+                 random = ~MSW93_Binomial+Period+phylo,
+                 ginverse = list(phylo = inv.phylo$Ainv),
+                 data = MPprevinfoMCMC,
+                 family = "gaussian",
+                 prior = prior_normal1,
+                 nitt = 50000, burnin = 1000, thin = 250,
+                 verbose = F, pl = T)
+summary(modtnp)
+
+
+
+
+Vdam.2 = diag(colMeans(modt3$VCV)[1:3])
+colnames(Vdam.2) = colnames(modt3$VCV)[1:3]
+Vdam.2
+
+autocorr(modt3$VCV)
 
 # Calculate lambda
-lambda_p = modt_1$VCV[,'phylo']/
-  (modt_1$VCV[,'phylo']+modt_1$VCV[,'units']+modt_1$VCV[,'MSW93_Binomial']+modt_1$VCV[,"Period"])
+lambda_p = modt2$VCV[,'phylo']/
+  (modt2$VCV[,'phylo']+modt2$VCV[,'units']+modt2$VCV[,'MSW93_Binomial']+modt2$VCV[,"Period"])
+plot(density(lambda_p))
 posterior.mode(lambda_p,0.25)
 mean(lambda_p)
+HPDinterval(lambda_p)
 
-MCMCprevalence = as.data.frame(summary(modt_1)$solutions)
-MCMCprevalence_var = as.data.frame(summary(modt_1)$Gcovariances)
+MCMCprevalence = as.data.frame(summary(modt2)$solutions)
+MCMCprevalence_var = as.data.frame(summary(modt2)$Gcovariances)
 lambda_prev = c(mean = mean(lambda_p), mode=posterior.mode(lambda_p, 0.25))
 
-MCMCprevalence2 = as.data.frame(summary(modt_2)$solutions)
-MCMCprevalence_var2 = as.data.frame(summary(modt_2)$Gcovariances)
-
 dim(MPprevinfoMCMC)
-#470 samples
+#471 samples
 
+# take data to species level
+lambda_prev_data = MPprevinfoMCMC %>%
+  group_by(phylo) %>%
+  summarize_at(vars(rd_2_qpcr_present), funs(mean, sd,n())) %>%
+  ungroup()
+
+# assign rownames
+row.names(lambda_prev_data)=lambda_prev_data$phylo
+
+# save prevalence as the continuous variable
+lpd = lambda_prev_data$mean
+
+# needs to be a named vector
+names(lpd) = row.names(lambda_prev_data)
+
+# add standard errors
+lped = lambda_prev_data$sd/sqrt(lambda_prev_data$n)
+
+names(lped) = row.names(lambda_prev_data)
+tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
+
+phytools::phylosig(tree, lrd, method="lambda", test=T)
+
+lped[12]=0.04 # based on others
+prevps = replicate(1000,phytools::phylosig(tree, lpd,se = lped, method="lambda", test=T))
+plot(density((unlist(prevps[c(1,(8*seq(1:999))+1)]))))
+prevps
+# 
+# lambda_rich_data = MPrichinfoMCMC %>% 
+#   group_by(phylo) %>% 
+#   summarize_at(vars(richness), funs(mean, sd,n())) %>% 
+#   ungroup()
+# row.names(lambda_rich_data)=lambda_rich_data$phylo
+# lrd = lambda_rich_data$mean
+# names(lrd) = row.names(lambda_rich_data)
+# led = lambda_rich_data$sd/sqrt(lambda_rich_data$n)
+# names(led) = row.names(lambda_rich_data)
+# 
+# library(phytools)
+# richps = phylosig(tree, lrd, se=led, method="lambda", test=T)
+# plot(richps)
+
+lpd2 = lambda_prev_data[match(tree$tip.label, row.names(lambda_prev_data)),]
+lpd2 = lpd2[-10,]
+lpd2 = as.data.frame(lpd2)
+tree = ape::drop.tip(tree, c("Bos_taurus"))
+
+p4ddata = phylo4d(tree, tip.data=(lpd2[,2]))
+phyloSignal(p4ddata)
+
+barplot.phylo4d(p4ddata, tree.ladderize=T, scale=F, center=F)
 
 ### Prevalence -glmmTMB ###
-model_prevalence = glmmTMB(rd_2_qpcr_present ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP+ (1|MSW93_Binomial)+(1|Period), family="binomial", data=MPprevinfoMCMC)
+model_prevalence = glmmTMB(rd_2_qpcr_mean_ct ~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP+ (1|MSW93_Binomial)+(1|Period), data=MPprevinfoMCMC)
+model_prevalence = glmmTMB(rd_2_qpcr_present~ log(BM_KG)+ GS+ GUT +UNDERSTORY_PROP+ (1|MSW93_Binomial)+(1|Period), family="binomial",data=MPprevinfoMCMC)
 summary(model_prevalence)
+
 # Save values
 TMBprevalence = as.data.frame(summary(model_prevalence)$coefficients$cond)
 TMBprevalence_var = unlist(summary(model_prevalence)$varcor$cond)
+
 
 MPdata_prev2 = left_join(tab_prev,unique(dplyr::select(MPrichinfoMCMC,Species,GUT,GS)))
 
 MPdata_prev2[which(MPdata_prev2$Species=="Cattle"),]$GUT="FG"
 
 # Plot gut type
-prevplotgp = MPdata_prev2 %>% 
-  group_by(GUT) %>% 
-  summarize_at(vars(mean), funs(sd, mean, n())) %>% 
-  mutate(se = sd/sqrt(n)) %>% 
-  ggplot(aes(x=GUT, y=mean))+
-  geom_errorbar(data=MPdata_prev2, aes(x=GUT, y=mean, ymin=lower, ymax=upper, col=Species), position = position_dodge(width=0.5), width=0.5)+
-  geom_errorbar(aes(ymin=mean-1.96*se, ymax=mean+1.96*se), size=1)+
-  geom_point(size=2)+
+prevplotgp = emmeans(model_prevalence, ~GUT, type="response") %>% 
+  as.data.frame() %>% 
+  ggplot(aes(x=GUT, y=prob))+
+  geom_errorbar(data=MPdata_prev2, aes(x=GUT, y=mean, ymin=lower, ymax=upper, col=Species), position=position_dodge(width=0.5), width=0.5)+
+  geom_errorbar(aes(ymin=lower.CL, ymax=upper.CL ),size=1)+
+  geom_point(size=1.5) +
   scale_color_manual(values=animal_colors)+
-  theme_bw()+
+  theme_bw(base_size=14)+
   theme(panel.grid.major.y = element_blank(),
         panel.grid.minor.y = element_blank(),
         panel.grid.major.x = element_blank(),
@@ -561,6 +623,20 @@ prevplotgp = MPdata_prev2 %>%
   guides(col="none")+
   labs(x="Gut Type", y="Prevalence")
 
+
+preds = predict(model_prevalence, type="response", se=T)
+MPprevinfoMCMC$pred = preds$fit
+MPprevinfoMCMC$pred_se = preds$se.fit
+
+
+# plot group size
+ggplot(MPprevinfoMCMC, aes(x=GS, y=pred))+
+  geom_point(data=MPdata_prev2, aes(x=GS, y=mean, col=Species), size=1.5)+
+  geom_errorbar(data=MPdata_prev2, aes(x=GS, y=mean, ymin=lower, ymax=upper, col=Species), position = "dodge", width=0.5, alpha=0.8)+
+  geom_smooth(method="glm", method.args=list(family="binomial"), col="gray20", se=F)+
+  scale_color_manual(values=animal_colors)+
+  facet_wrap(~GUT)+
+  theme_bw(base_size=14)+guides(col=F)
 
 gpplots = gridExtra::grid.arrange(prevplotgp, rich_sp_plot, ncol=2)
 
@@ -575,9 +651,78 @@ write.table(result_1, here(paste("docs/2_rich_prev_correlation",threshold_used,"
 write.table(result_2_3, here(paste("docs/2_anova_tests",threshold_used,".txt", sep="")), sep="\t")
 
 
+MCMCprevalence$predictor = row.names(MCMCprevalence)
+MCMCrichness$predictor = row.names(MCMCrichness)
+TMBprevalence$predictor = row.names(TMBprevalence)
+TMBrichness$predictor = row.names(TMBrichness)
+MCMCprevalence_var$predictor = row.names(MCMCprevalence_var)
+MCMCrichness_var$predictor = row.names(MCMCrichness_var)
+
+MCMCmods = rbind(MCMCprevalence, MCMCrichness)
+MCMCmods$Metric = c(rep("Prevalence",5), rep("Richness", 5))
+MCMCvars = rbind(MCMCprevalence_var, MCMCrichness_var)
+MCMCvars$Metric = c(rep("Prevalence",3), rep("Richness", 3))
+TMBmods = rbind(TMBprevalence, TMBrichness)
+TMBmods$Metric = c(rep("Prevalence",5), rep("Richness", 5))
+TMBvars = cbind(TMBprevalence_var, TMBrichness_var)
+names(TMBvars) = c("Prevalence","Richness")
+
+## Models MCMC
+MCMCmods2 = MCMCmods %>% 
+  mutate_at(vars(post.mean:pMCMC), funs(round(.,3))) %>% 
+  mutate(CI = paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
+  mutate(M = paste(post.mean, " (",pMCMC, ")", sep="")) %>% 
+  pivot_longer(cols=c(M,CI), names_to="Measure", values_to="Value") %>% 
+  dplyr::select(predictor, Value, eff.samp, Metric)
+
+## Variance
+MCMCvars2 = MCMCvars %>% 
+  mutate_at(vars(post.mean:eff.samp), funs(round(.,3))) %>% 
+  mutate(CI=paste(`l-95% CI`, `u-95% CI`, sep=", ")) %>% 
+  mutate_at(vars(post.mean), funs(as.character(.))) %>% 
+  pivot_longer(cols=c(post.mean, CI), names_to="Measure", values_to="Value") %>% 
+  dplyr::select(predictor,Value, eff.samp, Metric)
+MCMCvars2
+
+## TMB
+TMBmods2 = TMBmods %>% 
+  mutate_at(vars(Estimate:`Pr(>|z|)`), funs(round(.,3))) %>% 
+  mutate(M_SE=paste(Estimate, `Std. Error`, sep=", ")) %>% 
+  mutate(Z_p = paste(`z value`," (",`Pr(>|z|)`,")",sep="")) %>% 
+  pivot_longer(cols=c(M_SE,Z_p), names_to="Measure", values_to="Value") %>% 
+  dplyr::select(predictor, Value, Metric)
+
+# Combine into table
+
+allMods = cbind(MCMCmods2[1:10, ], TMBmods2[1:10,], MCMCmods2[11:20,], TMBmods2[11:20,])
+# check all variables in correct order
+names(allMods)=c("Predictor", "MCMC Prevalence", "eff.samp.prev", "Metric", "P2", "TMB Prevalence", "Metric", "P3",
+                 "MCMC Richness", "eff.samp.rich", "Metric", "P4", "TMB Richness", "Metric")
+allMods = allMods %>% 
+  select(Predictor, `MCMC Prevalence`, eff.samp.prev, `TMB Prevalence`, `MCMC Richness`, eff.samp.rich,`TMB Richness`)
+
+MCMCvars2
+TMBvars
+
+MCMCvars2 = data.frame(MCMCvars2[1:6,c(1:3)], TMB_Prev = c("","","",TMBvars[1,1],"",TMBvars[2,1]),
+           MCMCvars2[7:12,2:3], TMB_Rich =  c("","","",TMBvars[1,1],"",TMBvars[2,1]))
+MCMCvars2 = MCMCvars2 %>% 
+  mutate_at(vars(TMB_Prev, TMB_Rich), funs(round(as.numeric(.),2))) %>% 
+  mutate_at(vars(TMB_Prev, TMB_Rich), funs(ifelse(is.na(.), "",.)))
+names(MCMCvars2) = c("Predictor", "MCMC Prevalence", "eff.samp.prev", "TMB Prevalence", "MCMC Richness", "eff.samp.rich",
+                     "TMB Richness")            
+
+full_results_table = rbind(allMods, MCMCvars2)
+
+# cleaned results table
+write.csv(full_results_table, here(paste("docs/2_prev_rich_model_results",threshold_used,".csv", sep="")), row.names = F)
+# lambda
+write.table(as.data.frame(rbind(lambda_prev,lambda_rich)), here(paste("docs/2_prev_rich_lambda",threshold_used,".txt")), sep="\t")
+
+
 # species summary
 prev_result = tab %>% 
-  group_by(Species,MSW93_Binomial) %>% 
+  group_by(Species) %>% 
   mutate_at(vars(rd_2_qpcr_present), funs(ifelse(.=="Y",1,0))) %>% 
   summarize_at(vars(rd_2_qpcr_present), funs(mean,n())) %>% 
   rename(Prevalence = mean, Prev_N = n)
