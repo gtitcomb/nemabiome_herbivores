@@ -23,8 +23,8 @@ treeNJ2 = read.tree(here("data/treeNJ_K80_gamma_table_2.tree"))
 tipdata2 = read.csv(here("data/nem_taxa_table_2.csv"))
 
 # RRA files
-table_1 = read.csv(here("data/RRA_table_1.csv"))
-table_2 = read.csv(here("data/RRA_table_2.csv"))
+table_1 = read.csv(here("data/RRA_table_1r.csv"))
+table_2 = read.csv(here("data/RRA_table_2r.csv"))
 
 # host files
 hosts = read.csv(here("data/host_metadata.csv"))
@@ -302,6 +302,7 @@ dev.off()
 
 
 
+
 #### Bipartite to Unipartite Projection ###
 # project host matrix
 g2 = bipartite_projection(g, types=E(g)$type)
@@ -352,7 +353,7 @@ hostgraph = g2$proj1
 c = igraph::closeness(hostgraph, weights=(1/E(hostgraph)$weight))
 b = igraph::betweenness(hostgraph, weights=(1/E(hostgraph)$weight), directed=F)
 d = igraph::degree(hostgraph)
-e = igraph::eigen_centrality(hostgraph)$vector
+e = igraph::eigen_centrality(hostgraph, weights=E(hostgraph)$weight)$vector
 
 netdata = data.frame(species=names(c),c=c, b=b, d=d, e=e)
 
@@ -370,6 +371,7 @@ ggplot(netlong, aes(x=reorder(species,-Value), y=Value))+
 # phylogenetic distance of hosts
 phylodists = cophenetic(tree)
 
+library(picante)
 # calculate average distance from all others
 totaldists = as.data.frame(rowSums(phylodists)/18) # this is Average pairwise distance
 totaldists2 = evol.distinct(tree, type="fair.proportion")
@@ -513,17 +515,17 @@ netdata2 = netdata_all %>%
 comp.data = comparative.data(tree, netdata2, names.col="sciname", vcv.dim=3, warn.dropped=TRUE)
 comp.data$dropped
 
-ccor = cor.test(comp.data$data$c, comp.data$data$Distance, method="spearman")
-dcor = cor.test(comp.data$data$d, comp.data$data$Distance,  method="spearman")
-ecor = cor.test(comp.data$data$e, comp.data$data$Distance,  method="spearman")
-bcor = cor.test(comp.data$data$b, comp.data$data$Distance,  method="spearman")
+ccor = cor.test(comp.data$data$c, comp.data$data$w)
+dcor = cor.test(comp.data$data$d, comp.data$data$w)
+ecor = cor.test(comp.data$data$e, comp.data$data$w)
+bcor = cor.test(comp.data$data$b, comp.data$data$w)
 
-correlations = data.frame(S = c(dcor$statistic,ecor$statistic,bcor$statistic,ccor$statistic),
-                          rho =c(dcor$estimate,ecor$estimate,bcor$estimate,ccor$estimate),
+correlations = data.frame(t = c(dcor$statistic,ecor$statistic,bcor$statistic,ccor$statistic),
+                          r =c(dcor$estimate,ecor$estimate,bcor$estimate,ccor$estimate),
                           P = c(dcor$p.value,ecor$p.value,bcor$p.value,ccor$p.value),
                           test = c("Degree","Eigenvector","Betweenness","Closeness"))
 result_1 = correlations %>% 
-  pivot_longer(S:P, names_to="Correlation Details", values_to="value") %>% 
+  pivot_longer(t:P, names_to="Correlation Details", values_to="value") %>% 
   pivot_wider(names_from=test, values_from=value)
 result_1
 write_delim(result_1, here(paste("docs/6_centrality_cors",threshold_used, ".txt", sep="")))

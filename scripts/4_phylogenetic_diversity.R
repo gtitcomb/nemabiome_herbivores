@@ -30,8 +30,8 @@ treeNJ2 = read.tree(here("data/treeNJ_K80_gamma_table_2.tree"))
 tipdata2 = read.csv(here("data/nem_taxa_table_2.csv"))
 
 # RRA files
-table_1 = read.csv(here("data/RRA_table_1.csv"))
-table_2 = read.csv(here("data/RRA_table_2.csv"))
+table_1 = read.csv(here("data/RRA_table_1r.csv"))
+table_2 = read.csv(here("data/RRA_table_2r.csv"))
 
 # host files
 hosts = read.csv(here("data/host_metadata.csv"))

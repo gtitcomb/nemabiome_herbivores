@@ -1,0 +1,7 @@
+"step"	"n_motu1"	"n_motu2"	"n_samp1"	"n_samp2"
+"initial"	564	564	325	325
+"decontam"	216	216	325	325
+"less_1000"	214	214	325	325
+"POS_NA_mOTU"	214	214	283	283
+"RRA"	96	80	283	283
+"extras"	96	80	281	281

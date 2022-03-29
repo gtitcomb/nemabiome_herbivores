@@ -222,9 +222,11 @@ e_n_samp1 = d_n_samp - length(which(rowSums(clust_reads_n1) ==0))
 
 clust_reads_n1 = clust_reads_n1[,-(which(colSums(clust_reads_n1)==0))]
 
+set.seed(123); clust_reads_rare1 = as.data.frame(rrarefy(clust_reads_n1, 991))
+
 # add sample back and calculate new reads
-clust_reads_n1$reads = rowSums(clust_reads_n1)
-clust_reads_n1$Sample = clust_reads3$Sample
+clust_reads_rare1$reads = rowSums(clust_reads_n1)
+clust_reads_rare1$Sample = clust_reads3$Sample
 
 
 # Table 2: drop mOTUs representing less than 2% of reads in each sample
@@ -242,15 +244,18 @@ e_n_samp2 = d_n_samp - length(which(rowSums(clust_reads_n2) ==0))
 # remove empty columns
 clust_reads_n2 = clust_reads_n2[,-(which(colSums(clust_reads_n2)==0))]
 dim(clust_reads_n2)
+min(rowSums(clust_reads_n2))
+
+set.seed(123); clust_reads_rare2 = as.data.frame(rrarefy(clust_reads_n2, 748))
 
 # add sample back and calculate new reads
-clust_reads_n2$reads = rowSums(clust_reads_n2)
-clust_reads_n2$Sample = clust_reads3$Sample
+clust_reads_rare2$reads = rowSums(clust_reads_n2)
+clust_reads_rare2$Sample = clust_reads3$Sample
 
 
 # calculate RRA by dividing by minimum
-clust_reads_n1 = clust_reads_n1 %>% 
-  mutate_at(vars(mOTU_1:mOTU_488), funs(./reads))
+clust_reads_n1 = clust_reads_rare1 %>% 
+  mutate_at(vars(mOTU_1:mOTU_488), funs(./991))
 clust_reads_n1$Sample = clust_reads3$Sample
 
 # table 1 is our lower bound
@@ -261,9 +266,9 @@ end1 = dim(table_1)[2]-15
 
 # Table 2
 # calculate RRA by dividing by minimum
-clust_reads_n2 = clust_reads_n2 %>% 
-  mutate_at(vars(mOTU_1:mOTU_94), funs(./reads))
-clust_reads_n2$Sample = clust_reads3$Sample
+clust_reads_n2 = clust_reads_rare2 %>% 
+  mutate_at(vars(mOTU_1:mOTU_94), funs(./748))
+clust_reads_rare2$Sample = clust_reads3$Sample
 
 # table 2
 table_2 = left_join(clust_reads_n2, read_dist, by="Sample")
@@ -311,8 +316,8 @@ table_2 = table_2 %>%
 
 ##############################
 # save the cleaned data tables
-write.csv(dplyr::select(table_1, mOTU_1:mOTU_488, Sample, Filtered_Reads), here("data/RRA_table_1.csv"), row.names=F)
-write.csv(dplyr::select(table_2, mOTU_1:mOTU_94, Sample, Filtered_Reads), here("data/RRA_table_2.csv"), row.names=F)
+write.csv(dplyr::select(table_1, mOTU_1:mOTU_488, Sample, Filtered_Reads), here("data/RRA_table_1r.csv"), row.names=F)
+write.csv(dplyr::select(table_2, mOTU_1:mOTU_94, Sample, Filtered_Reads), here("data/RRA_table_2r.csv"), row.names=F)
 
 # sample and otu filtering summary
 filt_summary = data.frame(step = c("initial","decontam","less_1000","POS_NA_mOTU","RRA","extras"),
@@ -321,4 +326,4 @@ filt_summary = data.frame(step = c("initial","decontam","less_1000","POS_NA_mOTU
            n_samp1 = c(a_n_samp, b_n_samp, c_n_samp, d_n_samp, e_n_samp1, f_n_samp1),
            n_samp2 = c(a_n_samp, b_n_samp, c_n_samp, d_n_samp, e_n_samp2, f_n_samp2))
 
-write.table(filt_summary, here("docs/1_filt_summary.txt"), sep="\t", row.names=F)  
+write.table(filt_summary, here("docs/1_filt_summaryb.txt"), sep="\t", row.names=F)  

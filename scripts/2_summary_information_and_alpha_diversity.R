@@ -23,8 +23,8 @@ library(here) # ensure wd is in parent folder before running
 
 # A. read in RRA tables and combine with metadata
 
-table_1 = read.csv(here("data/RRA_table_1.csv"))
-table_2 = read.csv(here("data/RRA_table_2.csv"))
+table_1 = read.csv(here("data/RRA_table_1r.csv"))
+table_2 = read.csv(here("data/RRA_table_2r.csv"))
 head(table_1)[,1:10]
 
 # read in host information table
