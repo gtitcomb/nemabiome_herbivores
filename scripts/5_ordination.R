@@ -54,7 +54,7 @@ is.rooted(treetree)
 treetree$tip.label %in% names(data_table)
 names(data_table) %in% treetree$tip.label
 
-# create otu table=
+# create otu table
 otuotu = otu_table(data_table[,-c(dim(data_table)[2]-2, dim(data_table)[2]-1)], taxa_are_rows = F)
 
 # combine into phyloseq object
@@ -65,7 +65,7 @@ set.seed(123)
 ufc = phyloseq::UniFrac(comboseq, normalized=T, weighted = T) 
 hist(ufc)
 
-# ufc are the unifrac distances -- save this as a file
+# ufc are the unifrac distances
 ufcmat = as.matrix(ufc)
 rownames(ufcmat)=data_table$Sample
 colnames(ufcmat)=data_table$Sample
@@ -185,7 +185,6 @@ mOTU_NMDS = gridExtra::grid.arrange(MRCord1,MRCord2,ncol=2, widths=c(1,1.3))
 
 ### UniFrac Distances ###
 unif_ordMRC = metaMDS(ufcmat, k=3, distance="jaccard", binary=T, autotransform = F)
-#unif_ordMRC2 = metaMDS(ufcmat,  distance="jaccard", binary=T, autotransform = F)
 
 stressplot(unif_ordMRC)
 plot(unif_ordMRC);points(unif_ordMRC, display="sites")
@@ -384,7 +383,7 @@ ordisurf(unif_ordMRCagg2~ log(RS_KM2), envMRC);
 ordisurf(unif_ordMRCagg2 ~ GS, envMRC);
 ordisurf(unif_ordMRCagg2~ UNDERSTORY_SP_MEAN, envMRC)
 par(mfrow=c(1,1))
-#
+
 
 # implement permanova
 MRCdiv_unif = adonis2(ufcmat_agg2 ~ MSW93_Order + GUT + log(BM_KG) + GS + UNDERSTORY_SP_MEAN,  data=envMRC, permutations=999, by="margin")

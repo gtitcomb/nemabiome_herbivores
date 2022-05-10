@@ -136,7 +136,7 @@ write.table(fact_summary,here(paste("docs/2_sample_facts_", threshold_used,".txt
 #### Richness and Prevalence ####
 # Individual Richness #
 
-# set animal colors based on alphabet
+# set animal colors
 levels(as.factor(tab$Species))
 animal_colors=c("darkorchid4","goldenrod1","blueviolet", "deepskyblue3", "hotpink",  "dodgerblue","green3",  "goldenrod","dodgerblue3", "maroon1",  "deepskyblue2", "greenyellow", "dodgerblue4", "lightskyblue","lightskyblue1", "maroon3", "green4", "cyan2")
 
@@ -164,7 +164,7 @@ richgraph
 
 # Prevalence #
 
-# calculate prevalence with correct errorbars
+# calculate prevalence with CI
 tab_prev = tab %>% 
   mutate_at(vars(rd_2_qpcr_present), funs(ifelse(.=="Y",1,0))) %>% 
   group_by(Species) %>% 
@@ -265,7 +265,7 @@ tab_present$phylo = tab_present$MSW93_Binomial
 # format tree
 tree = read.tree(here("data/new_mammal_tree_pruned.newick"))
 
-# rename some tips
+# rename tips to match phylogeny
 tree$tip.label[which(tree$tip.label=="Nanger_granti")]="Gazella_granti"
 tree$tip.label[which(tree$tip.label=="Tragelaphus_oryx")]="Taurotragus_oryx"
 tree$tip.label[which(tree$tip.label=="Equus_africanus")]="Equus_asinus"
@@ -303,7 +303,7 @@ MPrichinfoMCMC$animal = MPrichinfoMCMC$Sample_ID
 MPrichinfoMCMC$phylo = MPrichinfoMCMC$MSW93_Binomial
 MPrichinfoMCMC = as.data.frame(MPrichinfoMCMC)
 
-# exclude cattle because they were treated
+# exclude cattle because they were treated with anthelminthics
 MPrichinfoMCMC = MPrichinfoMCMC[-which(MPrichinfoMCMC$Species=="Cattle"),]
 
 # use group mean for missing sample-level data for understory

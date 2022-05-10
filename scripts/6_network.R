@@ -8,7 +8,7 @@ library(fitdistrplus)
 library(tidyverse)
 library(ape)
 library(caper)
-
+library(picante)
 
 setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 setwd("../")
@@ -182,7 +182,7 @@ result_2 = distribution_table
 
 #write_delim(result_2, here(paste("docs/6_distribution_fit",threshold_used,".txt",sep="")))
 
-### New aggregation method ###
+### Alternative aggregation method ###
 
 head(avgRRA2)
 head(hosts)
@@ -201,7 +201,7 @@ t_RRA = hosts %>%
 t_RRA = t_RRA[which(specnumber(t_RRA[,-1])>1),]
 
 
-## core and satellite ##
+## core and satellite parasites ##
 head(data_table)
 tall = data_table %>% 
   mutate_at(vars(mOTU_1:mOTU_94), funs(ifelse(.>0,1,0))) %>% 
@@ -343,20 +343,18 @@ checklist[match(attr(E(g2$proj1),"vnames"), checklist)] == attr(E(g2$proj1),"vna
 
 # use this rearrangement if so
 E(g2$proj1)$weight = vec[match(attr(E(g2$proj1),"vnames"),checklist)]
-
 plot(g2$proj1, edge.width = E(g2$proj1)$weight*100, vertex.label.cex = 0.7)
 
 hostgraph = g2$proj1
 
 ## Calcualte centrality
-
 c = igraph::closeness(hostgraph, weights=(1/E(hostgraph)$weight))
 b = igraph::betweenness(hostgraph, weights=(1/E(hostgraph)$weight), directed=F)
 d = igraph::degree(hostgraph)
 e = igraph::eigen_centrality(hostgraph, weights=E(hostgraph)$weight)$vector
 
+# combine into one dataframe
 netdata = data.frame(species=names(c),c=c, b=b, d=d, e=e)
-
 netlong = netdata %>% 
   pivot_longer(cols=c(c,b,d,e), names_to="Measure", values_to="Value")
 
@@ -371,13 +369,14 @@ ggplot(netlong, aes(x=reorder(species,-Value), y=Value))+
 # phylogenetic distance of hosts
 phylodists = cophenetic(tree)
 
-library(picante)
 # calculate average distance from all others
 totaldists = as.data.frame(rowSums(phylodists)/18) # this is Average pairwise distance
 totaldists2 = evol.distinct(tree, type="fair.proportion")
-# correlate with equal splits?
+# does this correlate with equal splits?
 td3 = evol.distinct(tree, type="equal.splits")
 cor.test(totaldists2$w, td3$w)
+
+# save in dataframe
 totaldists$sciname = rownames(totaldists)
 totaldists2$sciname = totaldists2$Species
 
@@ -398,6 +397,7 @@ left_join(cp, pp) %>%
 
 evol.distinct(tree);totaldists
 cor.test(evol.distinct(tree)$w,totaldists$`rowSums(phylodists)/18`,method="pearson")
+# both methods are very similar
 
 # correct sci name
 species_link = data.frame(sciname = c("Loxodonta_africana",
@@ -422,7 +422,7 @@ species_link = data.frame(sciname = c("Loxodonta_africana",
 )
 
 
-
+# combine and plot data
 netdata = left_join(netdata,species_link) %>%
   left_join(.,totaldists) %>% 
   left_join(.,totaldists2)
@@ -478,8 +478,7 @@ nodedata2 = ggplot(netlong3, aes(x=w, y=Value))+
 
 nodedata2
 
-
-plot(hostgraph)
+# edit graph for plotting
 V(hostgraph)$color = ifelse(V(hostgraph)$name %in% c("Hippo"),
                             "greenyellow",
                             ifelse(V(hostgraph)$name %in% c("Elephant"),
@@ -495,6 +494,7 @@ V(hostgraph)$frame.color =  "white"
 V(hostgraph)$label.dist = 0
 
 
+# save network image
 pdf(here(paste("plots/6_hostgraph",threshold_used,".pdf",sep="")), width=8, height=8)
 set.seed(123); plot(hostgraph,
      vertex.label.cex = 1.5,
@@ -504,9 +504,8 @@ set.seed(123); plot(hostgraph,
 dev.off()
 
 
-# create models with host information
+# Create models with host information
 
-### C
 # exclude cattle because of parasite treatment
 
 netdata2 = netdata_all %>% 
@@ -532,9 +531,8 @@ write_delim(result_1, here(paste("docs/6_centrality_cors",threshold_used, ".txt"
 
 ### Models ###
 
-# multiply closeness because it is very small
+# rescale closeness 
 comp.data$data$c = comp.data$data$c * 100
-
 # don't use log(BM) and log(RS) at the same time
 c_mod = pgls(c~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS + w, data = comp.data, lambda=1, kappa=1, delta=1)
 dredge(c_mod)[1:5,]
@@ -574,7 +572,7 @@ bmodval2$Metric = "Betweenness"
 # degree -- not relevant for 0.002 dataset
 d_mod = pgls(d ~ GUT+ UNDERSTORY_SP_MEAN + log(BM_KG) + GS +w, data=comp.data, lambda=1,kappa=1,delta=1)
 dredge(d_mod)
-# Understory and Gut have perhaps some evidence, but not substantially 
+# Understory and Gut have some evidence, but not substantially 
 # more than the intercept
 d_mod2 = pgls(d ~ 1, data=comp.data, lambda=1,kappa=1,delta=1)
 dmodval = as.data.frame(summary(d_mod)$coefficients %>% round(.,3))
@@ -596,7 +594,7 @@ write.csv(network_table_vals2, here(paste("docs/6_network_table_vals2_",threshol
 
 
 #####################################################################
-
+# combine centrality metrics for visualization
 netdata$sc = BBmisc::normalize(netdata$c, method = "range", range=c(0,1))
 netdata$sd = BBmisc::normalize(netdata$d, method="range", range=c(0,1))
 netdata$se = BBmisc::normalize(netdata$e, method="range", range=c(0,1))
@@ -612,9 +610,11 @@ netlongsc$species = factor(netlongsc$species, levels = neworder)
 netlongsc$Measure=as.factor(netlongsc$Measure)
 levels(netlongsc$Measure)=c("Betweenness","Closeness","Degree","Eigenvector")
 
+# format species labels
 change = match(c("Grevys zebra","DikDik","Grants gazelle"),as.character(levels(netlongsc$species)))
 levels(netlongsc$species)[change]=c("Grevy's zebra","Dik-dik","Grant's gazelle")
 
+# plot
 centscore = ggplot(netlongsc, aes(x=species, y=Measure))+
   geom_tile(aes(fill=Value))+
   scale_fill_viridis_c(option="A")+

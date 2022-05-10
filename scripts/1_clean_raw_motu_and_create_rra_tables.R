@@ -59,7 +59,7 @@ names(reads)[which((names(reads) %in% plate_plan$Sample)==F)]
 plate_plan$Sample[which((plate_plan$Sample %in% names(reads))==F)]
 
 # examine distribution of total reads
-read_dist = as.data.frame(colSums(reads[,28:411]))
+read_dist = as.data.frame(colSums(reads[,20:403]))
 read_dist$Sample = row.names(read_dist)
 names(read_dist)[1]="Reads"
 
@@ -76,8 +76,7 @@ read_dist$Sample_type[grep("POS",read_dist$Sample)]="Positive"
 read_dist$Sample_type[grep("NEG",read_dist$Sample)]="Negative"
 read_dist$Sample_type[which(read_dist$Sample_type=="")]="Sample"
 
-# there is tag combination in plate 1 that has caused problems across sequencing runs
-# exclude that here
+# plate 1 blank exclude
 read_info  = read_dist %>% 
   filter(Sample!="Blank02") %>% 
   group_by(Sample_type) %>% 
@@ -151,7 +150,6 @@ c_n_motu = b_n_motu - 2
 c_n_samp = b_n_samp - length(which(rowSums(clust_reads2[,-1])==0))
 
 length(grep("POS",clust_reads2$Sample))
-# 333 - 8
 length(grep("mOTU", names(clust_reads2)))
 
 
@@ -258,7 +256,7 @@ clust_reads_n1 = clust_reads_rare1 %>%
   mutate_at(vars(mOTU_1:mOTU_488), funs(./991))
 clust_reads_n1$Sample = clust_reads3$Sample
 
-# table 1 is our lower bound
+# table 1 is lower bound
 table_1 = left_join(clust_reads_n1, read_dist, by="Sample")
 names(table_1)
 dim(table_1)

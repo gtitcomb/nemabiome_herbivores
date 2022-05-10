@@ -408,7 +408,7 @@ ggsave(here(paste("plots/4_pd_pdz_sp_plots",threshold_used,".png",sep="")),pdspp
 
 
 ##### New plot
-# combine datasets using
+# combine datasets
 PDMCMC2
 head(sp_sum)
 plot_data = PDMCMC2 %>% 

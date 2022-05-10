@@ -86,8 +86,7 @@ align = msaClustalOmega(here("data/nem_subset.fasta"),
                         useKimura=T) 
 
 aldna = as.DNAbin(align)
-dna = fasta2DNAbin(file=here("data/nem_subset.fasta")) # not sure why this takes so long
-
+dna = fasta2DNAbin(file=here("data/nem_subset.fasta"))
 # Labeling
 tips = rownames(dna)
 rownames(align) = tips
